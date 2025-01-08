@@ -28,6 +28,7 @@ const (
 	defaultAppPort                    = "8181"
 	defaultCacheSyncAttempts          = 10
 	defaultIAMRoleKey                 = "iam.amazonaws.com/role"
+	defaultIAMRoleSessionNameKey      = "iam.amazonaws.com/session-name"
 	defaultIAMExternalID              = "iam.amazonaws.com/external-id"
 	defaultLogLevel                   = "info"
 	defaultLogFormat                  = "text"
@@ -57,6 +58,7 @@ type Server struct {
 	BaseRoleARN                string
 	DefaultIAMRole             string
 	IAMRoleKey                 string
+	IAMRoleSessionNameKey      string
 	IAMExternalID              string
 	IAMRoleSessionTTL          time.Duration
 	MetadataAddress            string
@@ -334,7 +336,7 @@ func (s *Server) roleHandler(logger *log.Entry, w http.ResponseWriter, r *http.R
 		return
 	}
 
-	credentials, err := s.iam.AssumeRole(wantedRoleARN, externalID, remoteIP, s.IAMRoleSessionTTL)
+	credentials, err := s.iam.AssumeRole(wantedRoleARN, roleMapping.SessionName, externalID, remoteIP, s.IAMRoleSessionTTL)
 	if err != nil {
 		roleLogger.Errorf("Error assuming role %+v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -376,7 +378,7 @@ func (s *Server) Run(host, token, nodeName string, insecure bool) error {
 	s.k8s = k
 	s.iam = iam.NewClient(s.BaseRoleARN, s.UseRegionalStsEndpoint)
 	log.Debugln("Caches have been synced.  Proceeding with server.")
-	s.roleMapper = mappings.NewRoleMapper(s.IAMRoleKey, s.IAMExternalID, s.DefaultIAMRole, s.NamespaceRestriction, s.NamespaceKey, s.iam, s.k8s, s.NamespaceRestrictionFormat)
+	s.roleMapper = mappings.NewRoleMapper(s.IAMRoleKey, s.IAMRoleSessionNameKey, s.IAMExternalID, s.DefaultIAMRole, s.NamespaceRestriction, s.NamespaceKey, s.iam, s.k8s, s.NamespaceRestrictionFormat)
 	log.Debugf("Starting pod and namespace sync jobs with %s resync period", s.CacheResyncPeriod.String())
 	podSynched := s.k8s.WatchForPods(kube2iam.NewPodHandler(s.IAMRoleKey), s.CacheResyncPeriod)
 	namespaceSynched := s.k8s.WatchForNamespaces(kube2iam.NewNamespaceHandler(s.NamespaceKey), s.CacheResyncPeriod)
@@ -432,6 +434,7 @@ func NewServer() *Server {
 		MetricsPort:                defaultAppPort,
 		BackoffMaxElapsedTime:      defaultMaxElapsedTime,
 		IAMRoleKey:                 defaultIAMRoleKey,
+		IAMRoleSessionNameKey:      defaultIAMRoleSessionNameKey,
 		IAMExternalID:              defaultIAMExternalID,
 		BackoffMaxInterval:         defaultMaxInterval,
 		LogLevel:                   defaultLogLevel,
