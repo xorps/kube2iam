@@ -708,6 +708,7 @@ Usage of kube2iam:
       --host-interface string                 Host interface for proxying AWS metadata (default "docker0")
       --host-ip string                        IP address of host
       --iam-role-key string                   Pod annotation key used to retrieve the IAM role (default "iam.amazonaws.com/role")
+      --iam-role-session-name-key string      Pod annotation key used to set IAM Role Session Name (default "iam.amazonaws.com/session-name")
       --iam-external-id string                Pod annotation key used to retrieve the IAM ExternalId (default "iam.amazonaws.com/external-id")
       --insecure                              Kubernetes server should be accessed without verifying the TLS. Testing only
       --iptables                              Add iptables rule (also requires --host-ip)

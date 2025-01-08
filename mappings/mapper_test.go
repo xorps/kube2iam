@@ -360,6 +360,7 @@ func TestCheckRoleForNamespace(t *testing.T) {
 		t.Run(tt.test, func(t *testing.T) {
 			rp := NewRoleMapper(
 				roleKey,
+				"",
 				externalIDKey,
 				tt.defaultArn,
 				tt.namespaceRestriction,

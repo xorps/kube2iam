@@ -17,6 +17,7 @@ import (
 type RoleMapper struct {
 	defaultRoleARN             string
 	iamRoleKey                 string
+	iamRoleSessionNameKey      string
 	iamExternalIDKey           string
 	namespaceKey               string
 	namespaceRestriction       bool
@@ -34,9 +35,10 @@ type store interface {
 
 // RoleMappingResult represents the relevant information for a given mapping request
 type RoleMappingResult struct {
-	Role      string
-	IP        string
-	Namespace string
+	Role        string
+	IP          string
+	Namespace   string
+	SessionName string
 }
 
 // GetRoleMapping returns the normalized iam RoleMappingResult based on IP address
@@ -54,7 +56,7 @@ func (r *RoleMapper) GetRoleMapping(IP string) (*RoleMappingResult, error) {
 
 	// Determine if normalized role is allowed to be used in pod's namespace
 	if r.checkRoleForNamespace(role, pod.GetNamespace()) {
-		return &RoleMappingResult{Role: role, Namespace: pod.GetNamespace(), IP: IP}, nil
+		return &RoleMappingResult{Role: role, Namespace: pod.GetNamespace(), IP: IP, SessionName: pod.GetAnnotations()[r.iamRoleSessionNameKey]}, nil
 	}
 
 	return nil, fmt.Errorf("role requested %s not valid for namespace of pod at %s with namespace %s", role, IP, pod.GetNamespace())
@@ -161,10 +163,11 @@ func (r *RoleMapper) DumpDebugInfo() map[string]interface{} {
 }
 
 // NewRoleMapper returns a new RoleMapper for use.
-func NewRoleMapper(roleKey string, externalIDKey string, defaultRole string, namespaceRestriction bool, namespaceKey string, iamInstance *iam.Client, kubeStore store, namespaceRestrictionFormat string) *RoleMapper {
+func NewRoleMapper(roleKey string, roleSessionNameKey string, externalIDKey string, defaultRole string, namespaceRestriction bool, namespaceKey string, iamInstance *iam.Client, kubeStore store, namespaceRestrictionFormat string) *RoleMapper {
 	return &RoleMapper{
 		defaultRoleARN:             iamInstance.RoleARN(defaultRole),
 		iamRoleKey:                 roleKey,
+		iamRoleSessionNameKey:      roleSessionNameKey,
 		iamExternalIDKey:           externalIDKey,
 		namespaceKey:               namespaceKey,
 		namespaceRestriction:       namespaceRestriction,
