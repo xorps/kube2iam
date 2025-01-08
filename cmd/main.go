@@ -25,6 +25,9 @@ func addFlags(s *server.Server, fs *pflag.FlagSet) {
 	fs.StringVar(&s.IAMRoleSessionNameKey, "iam-role-session-name-key", s.IAMRoleSessionNameKey, "Pod annotation key used to set IAM Role Session Name")
 	fs.StringVar(&s.IAMExternalID, "iam-external-id", s.IAMExternalID, "Pod annotation key used to retrieve the IAM ExternalId")
 	fs.DurationVar(&s.IAMRoleSessionTTL, "iam-role-session-ttl", s.IAMRoleSessionTTL, "TTL for the assume role session")
+	fs.BoolVar(&s.EnablePodIdentityTags, "iam-enable-pod-identity-tags", s.EnablePodIdentityTags, "Enable EKS Pod Identity Session tagging")
+	fs.StringVar(&s.EksClusterARN, "eks-cluster-arn", s.EksClusterARN, "Sets EKS Cluster Arn for Pod Identity Tagging")
+	fs.StringVar(&s.EksClusterName, "eks-cluster-name", s.EksClusterName, "Sets EKS Cluster Name for Pod Identity Tagging")
 	fs.BoolVar(&s.Insecure, "insecure", false, "Kubernetes server should be accessed without verifying the TLS. Testing only")
 	fs.StringVar(&s.MetadataAddress, "metadata-addr", s.MetadataAddress, "Address for the ec2 metadata")
 	fs.BoolVar(&s.AddIPTablesRule, "iptables", false, "Add iptables rule (also requires --host-ip)")
@@ -112,6 +115,15 @@ func main() {
 	if s.AddIPTablesRule {
 		if err := iptables.AddRule(s.AppPort, s.MetadataAddress, s.HostInterface, s.HostIP); err != nil {
 			log.Fatalf("%s", err)
+		}
+	}
+
+	if s.EnablePodIdentityTags {
+		if s.EksClusterARN == "" {
+			log.Fatal("--eks-cluster-arn is required when using pod identity tags")
+		}
+		if s.EksClusterName == "" {
+			log.Fatal("--eks-cluster-name is required when using pod identity tags")
 		}
 	}
 

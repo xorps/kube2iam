@@ -35,10 +35,13 @@ type store interface {
 
 // RoleMappingResult represents the relevant information for a given mapping request
 type RoleMappingResult struct {
-	Role        string
-	IP          string
-	Namespace   string
-	SessionName string
+	Role                  string
+	IP                    string
+	Namespace             string
+	SessionName           string
+	PodName               string
+	PodUID                string
+	PodServiceAccountName string
 }
 
 // GetRoleMapping returns the normalized iam RoleMappingResult based on IP address
@@ -56,7 +59,15 @@ func (r *RoleMapper) GetRoleMapping(IP string) (*RoleMappingResult, error) {
 
 	// Determine if normalized role is allowed to be used in pod's namespace
 	if r.checkRoleForNamespace(role, pod.GetNamespace()) {
-		return &RoleMappingResult{Role: role, Namespace: pod.GetNamespace(), IP: IP, SessionName: pod.GetAnnotations()[r.iamRoleSessionNameKey]}, nil
+		return &RoleMappingResult{
+			Role:                  role,
+			Namespace:             pod.GetNamespace(),
+			IP:                    IP,
+			SessionName:           pod.GetAnnotations()[r.iamRoleSessionNameKey],
+			PodName:               pod.GetName(),
+			PodUID:                string(pod.GetUID()),
+			PodServiceAccountName: pod.Spec.ServiceAccountName,
+		}, nil
 	}
 
 	return nil, fmt.Errorf("role requested %s not valid for namespace of pod at %s with namespace %s", role, IP, pod.GetNamespace())

@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/aws-sdk-go-v2/service/sts/types"
 	smithy "github.com/aws/smithy-go"
 	"github.com/jtblin/kube2iam/metrics"
 	"github.com/karlseguin/ccache"
@@ -170,7 +171,7 @@ func loadRegions() (*ec2.DescribeRegionsOutput, error) {
 }
 
 // AssumeRole returns an IAM role Credentials using AWS STS.
-func (iam *Client) AssumeRole(roleARN, roleSesionName, externalID string, remoteIP string, sessionTTL time.Duration) (*Credentials, error) {
+func (iam *Client) AssumeRole(roleARN, roleSesionName, externalID string, remoteIP string, sessionTTL time.Duration, tags []types.Tag) (*Credentials, error) {
 	hitCache := true
 	item, err := cache.Fetch(roleARN, sessionTTL, func() (interface{}, error) {
 		hitCache = false
@@ -213,6 +214,7 @@ func (iam *Client) AssumeRole(roleARN, roleSesionName, externalID string, remote
 			DurationSeconds: aws.Int32(int32(sessionTTL.Seconds() * 2)),
 			RoleArn:         aws.String(roleARN),
 			RoleSessionName: aws.String(sessionName(roleARN, roleSesionName, remoteIP)),
+			Tags:            tags,
 		}
 		// Only inject the externalID if one was provided with the request
 		if externalID != "" {
