@@ -6,7 +6,7 @@ on:
     - main
 
 jobs:
-  goreleaser:
+  build:
     name: Build
     runs-on: ubuntu-latest
     steps:
@@ -20,12 +20,6 @@ jobs:
       with:
         go-version-file: go.mod
 
-    - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@v5
-      with:
-        version: latest
-        args: release --clean --snapshot --skip sign
-
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
 
@@ -38,4 +32,3 @@ jobs:
         context: .
         platforms: linux/amd64,linux/arm64
         push: false
-        tags: "gcr.io/xorps/kube2iam:pr-build"

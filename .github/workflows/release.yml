@@ -9,52 +9,8 @@ on:
     - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
 
 jobs:
-  goreleaser:
-    name: Create Release
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version-file: go.mod
-
-    - name: Import GPG key
-      id: import_gpg
-      uses: crazy-max/ghaction-import-gpg@v6
-      with:
-        gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-        passphrase: ${{ secrets.GPG_PASSPHRASE }}
-
-    - name: Export GPG public key
-      run: |
-        echo ${{ steps.import_gpg.outputs.fingerprint }} > key.fingerprint
-        gpg --armor --export ${{ steps.import_gpg.outputs.keyid }} > key.asc
-
-    - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@v5
-      with:
-        version: latest
-        args: release --clean --snapshot=${{ !startsWith(github.ref, 'refs/tags/v') }}
-      env:
-        GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Archive artifacts for use in Docker build
-      uses: actions/upload-artifact@v4
-      with:
-        name: dist
-        path: |
-          dist
-
-  dockerpublish:
-    name: Build and deploy the image
-    needs: goreleaser
+  release:
+    name: Release
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -66,13 +22,7 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Download build artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: dist
-        path: dist
-
-    - name: Log in to GitHub Container Registry
+    - name: GHCR Login
       run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
     - name: Set up QEMU
@@ -87,5 +37,4 @@ jobs:
         context: .
         platforms: linux/amd64,linux/arm64
         push: true
-        tags: |
-          ${{ format('ghcr.io/{0}/kube2iam:{1}', github.repository_owner, github.ref_name) }}
+        tags: ${{ format('ghcr.io/{0}/kube2iam:{1}', github.repository_owner, github.ref_name) }}
