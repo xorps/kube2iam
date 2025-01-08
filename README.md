@@ -703,6 +703,9 @@ Usage of kube2iam:
       --backoff-max-interval duration         Max interval for backoff when querying for role. (default 1s)
       --base-role-arn string                  Base role ARN
       --iam-role-session-ttl                  Length of session when assuming the roles (default 15m)
+      --iam-enable-pod-identity-tags          Enable EKS Pod Identity Session tagging
+      --eks-cluster-arn string                Sets EKS Cluster Arn for Pod Identity Tagging
+      --eks-cluster-name string               Sets EKS Cluster Name for Pod Identity Tagging
       --debug                                 Enable debug features
       --default-role string                   Fallback role to use when annotation is not set
       --host-interface string                 Host interface for proxying AWS metadata (default "docker0")

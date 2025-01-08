@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sts/types"
 	"github.com/cenk/backoff"
 	"github.com/gorilla/mux"
 	"github.com/jtblin/kube2iam"
@@ -61,6 +63,9 @@ type Server struct {
 	IAMRoleSessionNameKey      string
 	IAMExternalID              string
 	IAMRoleSessionTTL          time.Duration
+	EnablePodIdentityTags      bool
+	EksClusterName             string
+	EksClusterARN              string
 	MetadataAddress            string
 	HostInterface              string
 	HostIP                     string
@@ -336,7 +341,39 @@ func (s *Server) roleHandler(logger *log.Entry, w http.ResponseWriter, r *http.R
 		return
 	}
 
-	credentials, err := s.iam.AssumeRole(wantedRoleARN, roleMapping.SessionName, externalID, remoteIP, s.IAMRoleSessionTTL)
+	// these are a clone of EKS Pod Identity Session Tags
+	// https://docs.aws.amazon.com/eks/latest/userguide/pod-id-abac.html#pod-id-abac-tags
+	var tags []types.Tag
+	if s.EnablePodIdentityTags {
+		tags = []types.Tag{
+			{
+				Key:   aws.String("eks-cluster-arn"),
+				Value: aws.String(s.EksClusterARN),
+			},
+			{
+				Key:   aws.String("eks-cluster-name"),
+				Value: aws.String(s.EksClusterName),
+			},
+			{
+				Key:   aws.String("kubernetes-namespace"),
+				Value: aws.String(roleMapping.Namespace),
+			},
+			{
+				Key:   aws.String("kubernetes-service-account"),
+				Value: aws.String(roleMapping.PodServiceAccountName),
+			},
+			{
+				Key:   aws.String("kubernetes-pod-name"),
+				Value: aws.String(roleMapping.PodName),
+			},
+			{
+				Key:   aws.String("kubernetes-pod-uid"),
+				Value: aws.String(roleMapping.PodUID),
+			},
+		}
+	}
+
+	credentials, err := s.iam.AssumeRole(wantedRoleARN, roleMapping.SessionName, externalID, remoteIP, s.IAMRoleSessionTTL, tags)
 	if err != nil {
 		roleLogger.Errorf("Error assuming role %+v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
