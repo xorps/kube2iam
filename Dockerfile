@@ -1,11 +1,11 @@
-FROM golang:1.22.7 AS BUILDER
+FROM golang:1.23.5 AS BUILDER
 WORKDIR /go/src/github.com/jtblin/kube2iam
 ENV ARCH=linux
 ENV CGO_ENABLED=0
 COPY . ./
 RUN make setup && make build
 
-FROM alpine:3.20.2
+FROM alpine:3.21.2
 RUN apk --no-cache add \
     ca-certificates \
     iptables
