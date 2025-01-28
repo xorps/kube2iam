@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,11 +12,13 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts/types"
-	"github.com/cenk/backoff"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/gorilla/mux"
 	"github.com/jtblin/kube2iam"
 	"github.com/jtblin/kube2iam/iam"
@@ -90,9 +93,9 @@ type Server struct {
 	roleMapper                 *mappings.RoleMapper
 	BackoffMaxElapsedTime      time.Duration
 	BackoffMaxInterval         time.Duration
-	InstanceID                 string
-	HealthcheckFailReason      string
-	healthcheckTicker          *time.Ticker
+	InstanceID                 atomic.Pointer[string]
+	HealthcheckFailReason      atomic.Pointer[string]
+	healthcheckTicker          sync.Once
 }
 
 type appHandlerFunc func(*log.Entry, http.ResponseWriter, *http.Request)
@@ -177,60 +180,45 @@ func parseRemoteAddr(addr string) string {
 	return hostname
 }
 
-func (s *Server) getRoleMapping(IP string) (*mappings.RoleMappingResult, error) {
-	var roleMapping *mappings.RoleMappingResult
-	var err error
-	operation := func() error {
-		roleMapping, err = s.roleMapper.GetRoleMapping(IP)
-		return err
-	}
-
+func (s *Server) getRoleMapping(ctx context.Context, IP string) (*mappings.RoleMappingResult, error) {
 	expBackoff := backoff.NewExponentialBackOff()
 	expBackoff.MaxInterval = s.BackoffMaxInterval
-	expBackoff.MaxElapsedTime = s.BackoffMaxElapsedTime
 
-	err = backoff.Retry(operation, expBackoff)
-	if err != nil {
-		return nil, err
-	}
-
-	return roleMapping, nil
+	return backoff.Retry(ctx, func() (*mappings.RoleMappingResult, error) {
+		return s.roleMapper.GetRoleMapping(ctx, IP)
+	}, backoff.WithBackOff(expBackoff), backoff.WithMaxElapsedTime(s.BackoffMaxElapsedTime))
 }
 
-func (s *Server) getExternalIDMapping(IP string) (string, error) {
-	var externalID string
-	var err error
-	operation := func() error {
-		externalID, err = s.roleMapper.GetExternalIDMapping(IP)
-		return err
-	}
-
+func (s *Server) getExternalIDMapping(ctx context.Context, IP string) (string, error) {
 	expBackoff := backoff.NewExponentialBackOff()
 	expBackoff.MaxInterval = s.BackoffMaxInterval
-	expBackoff.MaxElapsedTime = s.BackoffMaxElapsedTime
 
-	err = backoff.Retry(operation, expBackoff)
-	if err != nil {
-		return "", err
-	}
-
-	return externalID, nil
+	return backoff.Retry(ctx, func() (string, error) {
+		return s.roleMapper.GetExternalIDMapping(ctx, IP)
+	}, backoff.WithBackOff(expBackoff), backoff.WithMaxElapsedTime(s.BackoffMaxElapsedTime))
 }
 
-func (s *Server) beginPollHealthcheck(interval time.Duration) {
-	if s.healthcheckTicker == nil {
-		s.doHealthcheck()
-		s.healthcheckTicker = time.NewTicker(interval)
-		go func() {
+func (s *Server) beginPollHealthcheck(ctx context.Context, interval time.Duration) {
+	s.healthcheckTicker.Do(func() {
+		s.doHealthcheck(ctx)
+
+		go func(ctx context.Context, inteval time.Duration) {
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+
 			for {
-				<-s.healthcheckTicker.C
-				s.doHealthcheck()
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					s.doHealthcheck(ctx)
+				}
 			}
-		}()
-	}
+		}(ctx, interval)
+	})
 }
 
-func (s *Server) doHealthcheck() {
+func (s *Server) doHealthcheck(ctx context.Context) {
 	// Track the healthcheck status as a metric value. Running this function in the background on a timer
 	// allows us to update both the /healthz endpoint and healthcheck metric value at once and keep them in sync.
 	var err error
@@ -240,21 +228,21 @@ func (s *Server) doHealthcheck() {
 	// on whether it passed or failed.
 	defer func() {
 		var healthcheckResult float64 = 1
-		s.HealthcheckFailReason = errMsg // Is empty if no error
+		s.HealthcheckFailReason.Store(aws.String(errMsg)) // Is empty if no error
 		if err != nil || len(errMsg) > 0 {
 			healthcheckResult = 0
 		}
 		metrics.HealthcheckStatus.Set(healthcheckResult)
 	}()
 
-	instanceId, err := s.iam.GetInstanceId()
+	instanceId, err := s.iam.GetInstanceId(ctx)
 	if err != nil {
 		errMsg = fmt.Sprintf("Error getting instance id %+v", err)
 		log.Errorf(errMsg)
 		return
 	}
 
-	s.InstanceID = string(instanceId)
+	s.InstanceID.Store(aws.String(instanceId))
 }
 
 // HealthResponse represents a response for the health check.
@@ -268,12 +256,14 @@ func (s *Server) healthHandler(logger *log.Entry, w http.ResponseWriter, r *http
 	// The healthcheck logic is performed in doHealthcheck and saved into Server struct fields.
 	// This "caching" of results allows the healthcheck to be monitored at a high request rate by external systems
 	// without fear of overwhelming any rate limits with AWS or other dependencies.
-	if len(s.HealthcheckFailReason) > 0 {
-		http.Error(w, s.HealthcheckFailReason, http.StatusInternalServerError)
+	reason := aws.ToString(s.HealthcheckFailReason.Load())
+	if len(reason) > 0 {
+		http.Error(w, reason, http.StatusInternalServerError)
 		return
 	}
 
-	health := &HealthResponse{InstanceID: s.InstanceID, HostIP: s.HostIP}
+	instanceId := aws.ToString(s.InstanceID.Load())
+	health := &HealthResponse{InstanceID: instanceId, HostIP: s.HostIP}
 	w.Header().Add("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(health); err != nil {
 		log.Errorf("Error sending json %+v", err)
@@ -282,7 +272,9 @@ func (s *Server) healthHandler(logger *log.Entry, w http.ResponseWriter, r *http
 }
 
 func (s *Server) debugStoreHandler(logger *log.Entry, w http.ResponseWriter, r *http.Request) {
-	o, err := json.Marshal(s.roleMapper.DumpDebugInfo())
+	ctx := r.Context()
+
+	o, err := json.Marshal(s.roleMapper.DumpDebugInfo(ctx))
 	if err != nil {
 		log.Errorf("Error converting debug map to json: %+v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -293,9 +285,11 @@ func (s *Server) debugStoreHandler(logger *log.Entry, w http.ResponseWriter, r *
 }
 
 func (s *Server) securityCredentialsHandler(logger *log.Entry, w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	w.Header().Set("Server", "EC2ws")
 	remoteIP := parseRemoteAddr(r.RemoteAddr)
-	roleMapping, err := s.getRoleMapping(remoteIP)
+	roleMapping, err := s.getRoleMapping(ctx, remoteIP)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -311,16 +305,18 @@ func (s *Server) securityCredentialsHandler(logger *log.Entry, w http.ResponseWr
 }
 
 func (s *Server) roleHandler(logger *log.Entry, w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	w.Header().Set("Server", "EC2ws")
 	remoteIP := parseRemoteAddr(r.RemoteAddr)
 
-	roleMapping, err := s.getRoleMapping(remoteIP)
+	roleMapping, err := s.getRoleMapping(ctx, remoteIP)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
-	externalID, err := s.getExternalIDMapping(remoteIP)
+	externalID, err := s.getExternalIDMapping(ctx, remoteIP)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -373,7 +369,7 @@ func (s *Server) roleHandler(logger *log.Entry, w http.ResponseWriter, r *http.R
 		}
 	}
 
-	credentials, err := s.iam.AssumeRole(wantedRoleARN, roleMapping.SessionName, externalID, remoteIP, s.IAMRoleSessionTTL, tags)
+	credentials, err := s.iam.AssumeRole(ctx, wantedRoleARN, roleMapping.SessionName, externalID, remoteIP, s.IAMRoleSessionTTL, tags)
 	if err != nil {
 		roleLogger.Errorf("Error assuming role %+v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -407,7 +403,7 @@ func write(logger *log.Entry, w http.ResponseWriter, s string) {
 }
 
 // Run runs the specified Server.
-func (s *Server) Run(host, token, nodeName string, insecure bool) error {
+func (s *Server) Run(ctx context.Context, host, token, nodeName string, insecure bool) error {
 	k, err := k8s.NewClient(host, token, nodeName, insecure, s.ResolveDupIPs)
 	if err != nil {
 		return err
@@ -432,7 +428,7 @@ func (s *Server) Run(host, token, nodeName string, insecure bool) error {
 	}
 
 	// Begin healthchecking
-	s.beginPollHealthcheck(healthcheckInterval)
+	s.beginPollHealthcheck(ctx, healthcheckInterval)
 
 	r := mux.NewRouter()
 	securityHandler := newAppHandler("securityCredentialsHandler", s.securityCredentialsHandler)
@@ -466,7 +462,7 @@ func (s *Server) Run(host, token, nodeName string, insecure bool) error {
 
 // NewServer will create a new Server with default values.
 func NewServer() *Server {
-	return &Server{
+	s := &Server{
 		AppPort:                    defaultAppPort,
 		MetricsPort:                defaultAppPort,
 		BackoffMaxElapsedTime:      defaultMaxElapsedTime,
@@ -481,7 +477,10 @@ func NewServer() *Server {
 		CacheResyncPeriod:          defaultCacheResyncPeriod,
 		ResolveDupIPs:              defaultResolveDupIPs,
 		NamespaceRestrictionFormat: defaultNamespaceRestrictionFormat,
-		HealthcheckFailReason:      "Healthcheck not yet performed",
 		IAMRoleSessionTTL:          defaultIAMRoleSessionTTL,
 	}
+
+	s.HealthcheckFailReason.Store(aws.String("Healthcheck not yet performed"))
+
+	return s
 }

@@ -1,6 +1,7 @@
 package mappings
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -389,7 +390,7 @@ type storeMock struct {
 func (k *storeMock) ListPodIPs() []string {
 	return nil
 }
-func (k *storeMock) PodByIP(string) (*v1.Pod, error) {
+func (k *storeMock) PodByIP(context.Context, string) (*v1.Pod, error) {
 	return nil, nil
 }
 func (k *storeMock) ListNamespaces() []string {

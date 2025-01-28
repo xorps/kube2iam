@@ -53,14 +53,14 @@ func getHash(text string) string {
 	return fmt.Sprintf("%x", h.Sum32())
 }
 
-func getInstanceMetadata(path string) (string, error) {
-	cfg, err := config.LoadDefaultConfig(context.TODO())
+func getInstanceMetadata(ctx context.Context, path string) (string, error) {
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return "", err
 	}
 
 	client := imds.NewFromConfig(cfg)
-	metadataResult, err := client.GetMetadata(context.TODO(), &imds.GetMetadataInput{
+	metadataResult, err := client.GetMetadata(ctx, &imds.GetMetadataInput{
 		Path: path,
 	})
 	if err != nil {
@@ -81,8 +81,8 @@ func getInstanceMetadata(path string) (string, error) {
 }
 
 // GetInstanceIAMRole get instance IAM role from metadata service.
-func GetInstanceIAMRole() (string, error) {
-	iamRole, err := getInstanceMetadata("iam/security-credentials/")
+func GetInstanceIAMRole(ctx context.Context) (string, error) {
+	iamRole, err := getInstanceMetadata(ctx, "iam/security-credentials/")
 
 	if err != nil {
 		return "", err
@@ -91,8 +91,8 @@ func GetInstanceIAMRole() (string, error) {
 }
 
 // Get InstanceId for healthcheck
-func (iam *Client) GetInstanceId() (string, error) {
-	instanceId, err := getInstanceMetadata("instance-id")
+func (iam *Client) GetInstanceId(ctx context.Context) (string, error) {
+	instanceId, err := getInstanceMetadata(ctx, "instance-id")
 
 	if err != nil {
 		return "", err
@@ -148,14 +148,14 @@ func IsValidRegion(promisedLand string, regions *ec2.DescribeRegionsOutput) bool
 // Regions list to validate input region name
 //
 // https://stackoverflow.com/a/69935735/3945261
-func loadRegions() (*ec2.DescribeRegionsOutput, error) {
+func loadRegions(ctx context.Context) (*ec2.DescribeRegionsOutput, error) {
 	regionsCache, err := cache.Fetch("awsRegions", time.Hour*24*30, func() (interface{}, error) {
-		cfg, err := config.LoadDefaultConfig(context.TODO())
+		cfg, err := config.LoadDefaultConfig(ctx)
 		if err != nil {
 			return nil, err
 		}
 		ec2Client := ec2.NewFromConfig(cfg)
-		r, err := ec2Client.DescribeRegions(context.TODO(), &ec2.DescribeRegionsInput{})
+		r, err := ec2Client.DescribeRegions(ctx, &ec2.DescribeRegionsInput{})
 		if err != nil {
 			return nil, err
 		}
@@ -171,7 +171,7 @@ func loadRegions() (*ec2.DescribeRegionsOutput, error) {
 }
 
 // AssumeRole returns an IAM role Credentials using AWS STS.
-func (iam *Client) AssumeRole(roleARN, roleSesionName, externalID string, remoteIP string, sessionTTL time.Duration, tags []types.Tag) (*Credentials, error) {
+func (iam *Client) AssumeRole(ctx context.Context, roleARN, roleSesionName, externalID string, remoteIP string, sessionTTL time.Duration, tags []types.Tag) (*Credentials, error) {
 	hitCache := true
 	item, err := cache.Fetch(roleARN, sessionTTL, func() (interface{}, error) {
 		hitCache = false
@@ -185,7 +185,7 @@ func (iam *Client) AssumeRole(roleARN, roleSesionName, externalID string, remote
 		timer := metrics.NewFunctionTimer(metrics.IamRequestSec, lvsProducer, nil)
 		defer timer.ObserveDuration()
 
-		regions, err := loadRegions()
+		regions, err := loadRegions(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -203,7 +203,7 @@ func (iam *Client) AssumeRole(roleARN, roleSesionName, externalID string, remote
 		})
 
 		cfg, err := config.LoadDefaultConfig(
-			context.TODO(),
+			ctx,
 			config.WithEndpointResolverWithOptions(customSTSResolver),
 		)
 		if err != nil {
@@ -224,7 +224,7 @@ func (iam *Client) AssumeRole(roleARN, roleSesionName, externalID string, remote
 		// Maybe use NewAssumeRoleProvider - https://github.com/aws/aws-sdk-go-v2/blob/credentials/v1.12.10/credentials/stscreds/assume_role_provider.go#L254
 		// That's wrapper for AssumeRole with some default values for options
 		// https://github.com/aws/aws-sdk-go-v2/blob/credentials/v1.12.10/credentials/stscreds/assume_role_provider.go#L270
-		resp, err := svc.AssumeRole(context.TODO(), &assumeRoleInput)
+		resp, err := svc.AssumeRole(ctx, &assumeRoleInput)
 		if err != nil {
 			return nil, err
 		}
