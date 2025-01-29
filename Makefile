@@ -57,6 +57,11 @@ cover:
 	go tool cover -func=coverage.out
 	go tool cover -html=coverage.out
 
+.PHONY: cover-ci
+cover-ci:
+	./cover.sh
+	go tool cover -func=coverage.out
+
 coveralls:
 	./cover.sh
 	goveralls -coverprofile=coverage.out -service=circle-ci -repotoken=$(COVERALLS_TOKEN)
