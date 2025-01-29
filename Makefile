@@ -66,11 +66,11 @@ junit-test:
 
 check:
 	go install ./cmd
-	golangci-lint run --enable=gocyclo --concurrency=$(GOLANGCI_LINT_CONCURRENCY) --deadline=$(GOLANGCI_LINT_DEADLINE)s
+	golangci-lint run --enable=gocyclo --concurrency=$(GOLANGCI_LINT_CONCURRENCY) --timeout=$(GOLANGCI_LINT_DEADLINE)s
 
 check-all:
 	go install ./cmd
-	golangci-lint run --enable=gocyclo --concurrency=$(GOLANGCI_LINT_CONCURRENCY) --deadline=600s
+	golangci-lint run --enable=gocyclo --concurrency=$(GOLANGCI_LINT_CONCURRENCY) --timeout=600s
 
 docker:
 	docker build -t $(IMAGE_NAME):$(GIT_HASH) . $(DOCKER_BUILD_FLAGS)
