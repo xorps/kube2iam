@@ -172,11 +172,15 @@ func (iam *Client) AssumeRole(ctx context.Context, roleARN, roleSesionName, exte
 			DurationSeconds: aws.Int32(int32(sessionTTL.Seconds() * 2)),
 			RoleArn:         aws.String(roleARN),
 			RoleSessionName: aws.String(sessionName(roleARN, roleSesionName, remoteIP)),
-			Tags:            tags,
 		}
+
 		// Only inject the externalID if one was provided with the request
 		if externalID != "" {
 			assumeRoleInput.ExternalId = aws.String(externalID)
+		}
+
+		if len(tags) > 0 {
+			assumeRoleInput.Tags = tags
 		}
 
 		// Maybe use NewAssumeRoleProvider - https://github.com/aws/aws-sdk-go-v2/blob/credentials/v1.12.10/credentials/stscreds/assume_role_provider.go#L254
