@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -51,86 +53,98 @@ func addFlags(s *server.Server, fs *pflag.FlagSet) {
 	fs.BoolVar(&s.Version, "version", false, "Print the version and exits")
 }
 
-func main() {
-	func(ctx context.Context) {
-		s := server.NewServer()
-		addFlags(s, pflag.CommandLine)
-		pflag.Parse()
+func run(ctx context.Context) error {
+	s := server.NewServer()
 
-		logLevel, err := log.ParseLevel(s.LogLevel)
-		if err != nil {
-			log.Fatalf("%s", err)
+	addFlags(s, pflag.CommandLine)
+	pflag.Parse()
+
+	logLevel, err := log.ParseLevel(s.LogLevel)
+	if err != nil {
+		return err
+	}
+
+	if s.Verbose {
+		log.SetLevel(log.DebugLevel)
+	} else {
+		log.SetLevel(logLevel)
+	}
+
+	if strings.ToLower(s.LogFormat) == "json" {
+		log.SetFormatter(&log.JSONFormatter{})
+	}
+
+	if s.Version {
+		version.PrintVersionAndExit()
+	}
+
+	if s.BaseRoleARN != "" {
+		if !iam.IsValidBaseARN(s.BaseRoleARN) {
+			return fmt.Errorf("Invalid --base-role-arn specified, expected: %s", iam.ARNRegexp.String())
 		}
 
-		if s.Verbose {
-			log.SetLevel(log.DebugLevel)
-		} else {
-			log.SetLevel(logLevel)
+		if !strings.HasSuffix(s.BaseRoleARN, "/") {
+			s.BaseRoleARN += "/"
 		}
+	}
 
-		if strings.ToLower(s.LogFormat) == "json" {
-			log.SetFormatter(&log.JSONFormatter{})
-		}
-
-		if s.Version {
-			version.PrintVersionAndExit()
-		}
-
+	if s.AutoDiscoverBaseArn {
 		if s.BaseRoleARN != "" {
-			if !iam.IsValidBaseARN(s.BaseRoleARN) {
-				log.Fatalf("Invalid --base-role-arn specified, expected: %s", iam.ARNRegexp.String())
-			}
-			if !strings.HasSuffix(s.BaseRoleARN, "/") {
-				s.BaseRoleARN += "/"
-			}
+			return errors.New("--auto-discover-base-arn cannot be used if --base-role-arn is specified")
 		}
 
-		if s.AutoDiscoverBaseArn {
-			if s.BaseRoleARN != "" {
-				log.Fatal("--auto-discover-base-arn cannot be used if --base-role-arn is specified")
-			}
-			arn, err := iam.GetBaseArn(ctx)
-			if err != nil {
-				log.Fatalf("%s", err)
-			}
-			log.Infof("base ARN autodetected, %s", arn)
-			s.BaseRoleARN = arn
+		arn, err := iam.GetBaseArn(ctx)
+		if err != nil {
+			return err
 		}
 
-		if s.AutoDiscoverDefaultRole {
-			if s.DefaultIAMRole != "" {
-				log.Fatalf("You cannot use --default-role and --auto-discover-default-role at the same time")
-			}
-			arn, err := iam.GetBaseArn(ctx)
-			if err != nil {
-				log.Fatalf("%s", err)
-			}
-			s.BaseRoleARN = arn
-			instanceIAMRole, err := iam.GetInstanceIAMRole(ctx)
-			if err != nil {
-				log.Fatalf("%s", err)
-			}
-			s.DefaultIAMRole = instanceIAMRole
-			log.Infof("Using instance IAMRole %s%s as default", s.BaseRoleARN, s.DefaultIAMRole)
+		log.Infof("base ARN autodetected, %s", arn)
+
+		s.BaseRoleARN = arn
+	}
+
+	if s.AutoDiscoverDefaultRole {
+		if s.DefaultIAMRole != "" {
+			return errors.New("You cannot use --default-role and --auto-discover-default-role at the same time")
 		}
 
-		if s.AddIPTablesRule {
-			if err := iptables.AddRule(s.AppPort, s.MetadataAddress, s.HostInterface, s.HostIP); err != nil {
-				log.Fatalf("%s", err)
-			}
+		arn, err := iam.GetBaseArn(ctx)
+		if err != nil {
+			return err
 		}
 
-		if s.EnablePodIdentityTags {
-			if s.EksClusterARN == "" {
-				log.Fatal("--eks-cluster-arn is required when using pod identity tags")
-			}
-			if s.EksClusterName == "" {
-				log.Fatal("--eks-cluster-name is required when using pod identity tags")
-			}
+		s.BaseRoleARN = arn
+
+		instanceIAMRole, err := iam.GetInstanceIAMRole(ctx)
+		if err != nil {
+			return err
 		}
 
-		if err := s.Run(ctx, s.APIServer, s.APIToken, s.NodeName, s.Insecure); err != nil {
-			log.Fatalf("%s", err)
+		s.DefaultIAMRole = instanceIAMRole
+
+		log.Infof("Using instance IAMRole %s%s as default", s.BaseRoleARN, s.DefaultIAMRole)
+	}
+
+	if s.AddIPTablesRule {
+		if err := iptables.AddRule(s.AppPort, s.MetadataAddress, s.HostInterface, s.HostIP); err != nil {
+			return err
 		}
-	}(context.Background())
+	}
+
+	if s.EnablePodIdentityTags {
+		if s.EksClusterARN == "" {
+			return errors.New("--eks-cluster-arn is required when using pod identity tags")
+		}
+		if s.EksClusterName == "" {
+			return errors.New("--eks-cluster-name is required when using pod identity tags")
+		}
+	}
+
+	return s.Run(ctx, s.APIServer, s.APIToken, s.NodeName, s.Insecure)
+}
+
+func main() {
+	if err := run(context.Background()); err != nil {
+		log.Fatal(err)
+	}
 }
