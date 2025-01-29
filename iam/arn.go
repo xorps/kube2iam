@@ -30,14 +30,14 @@ func (iam *Client) RoleARN(role string) string {
 }
 
 // GetBaseArn get the base ARN from metadata service.
-func GetBaseArn() (string, error) {
-	cfg, err := config.LoadDefaultConfig(context.TODO())
+func GetBaseArn(ctx context.Context) (string, error) {
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return "", err
 	}
 
 	client := imds.NewFromConfig(cfg)
-	iamInfo, err := client.GetIAMInfo(context.TODO(), &imds.GetIAMInfoInput{})
+	iamInfo, err := client.GetIAMInfo(ctx, &imds.GetIAMInfoInput{})
 	if err != nil {
 		return "", err
 	}

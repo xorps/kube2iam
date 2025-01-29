@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"io/ioutil"
+	"io"
 	"strings"
 	"time"
 
@@ -53,14 +53,14 @@ func getHash(text string) string {
 	return fmt.Sprintf("%x", h.Sum32())
 }
 
-func getInstanceMetadata(path string) (string, error) {
-	cfg, err := config.LoadDefaultConfig(context.TODO())
+func getInstanceMetadata(ctx context.Context, path string) (string, error) {
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return "", err
 	}
 
 	client := imds.NewFromConfig(cfg)
-	metadataResult, err := client.GetMetadata(context.TODO(), &imds.GetMetadataInput{
+	metadataResult, err := client.GetMetadata(ctx, &imds.GetMetadataInput{
 		Path: path,
 	})
 	if err != nil {
@@ -68,8 +68,8 @@ func getInstanceMetadata(path string) (string, error) {
 	}
 	// https://aws.github.io/aws-sdk-go-v2/docs/making-requests/#responses-with-ioreadcloser
 	defer metadataResult.Content.Close()
-	instanceId, err := ioutil.ReadAll(metadataResult.Content)
 
+	instanceId, err := io.ReadAll(metadataResult.Content)
 	if err != nil {
 		return "", fmt.Errorf("Expect to read content [%s] from bytes, got %v", err, path)
 	}
@@ -81,8 +81,8 @@ func getInstanceMetadata(path string) (string, error) {
 }
 
 // GetInstanceIAMRole get instance IAM role from metadata service.
-func GetInstanceIAMRole() (string, error) {
-	iamRole, err := getInstanceMetadata("iam/security-credentials/")
+func GetInstanceIAMRole(ctx context.Context) (string, error) {
+	iamRole, err := getInstanceMetadata(ctx, "iam/security-credentials/")
 
 	if err != nil {
 		return "", err
@@ -91,8 +91,8 @@ func GetInstanceIAMRole() (string, error) {
 }
 
 // Get InstanceId for healthcheck
-func (iam *Client) GetInstanceId() (string, error) {
-	instanceId, err := getInstanceMetadata("instance-id")
+func (iam *Client) GetInstanceId(ctx context.Context) (string, error) {
+	instanceId, err := getInstanceMetadata(ctx, "instance-id")
 
 	if err != nil {
 		return "", err
@@ -145,33 +145,8 @@ func IsValidRegion(promisedLand string, regions *ec2.DescribeRegionsOutput) bool
 	return false
 }
 
-// Regions list to validate input region name
-//
-// https://stackoverflow.com/a/69935735/3945261
-func loadRegions() (*ec2.DescribeRegionsOutput, error) {
-	regionsCache, err := cache.Fetch("awsRegions", time.Hour*24*30, func() (interface{}, error) {
-		cfg, err := config.LoadDefaultConfig(context.TODO())
-		if err != nil {
-			return nil, err
-		}
-		ec2Client := ec2.NewFromConfig(cfg)
-		r, err := ec2Client.DescribeRegions(context.TODO(), &ec2.DescribeRegionsInput{})
-		if err != nil {
-			return nil, err
-		}
-
-		return r, nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return regionsCache.Value().(*ec2.DescribeRegionsOutput), nil
-}
-
 // AssumeRole returns an IAM role Credentials using AWS STS.
-func (iam *Client) AssumeRole(roleARN, roleSesionName, externalID string, remoteIP string, sessionTTL time.Duration, tags []types.Tag) (*Credentials, error) {
+func (iam *Client) AssumeRole(ctx context.Context, roleARN, roleSesionName, externalID string, remoteIP string, sessionTTL time.Duration, tags []types.Tag) (*Credentials, error) {
 	hitCache := true
 	item, err := cache.Fetch(roleARN, sessionTTL, func() (interface{}, error) {
 		hitCache = false
@@ -185,30 +160,13 @@ func (iam *Client) AssumeRole(roleARN, roleSesionName, externalID string, remote
 		timer := metrics.NewFunctionTimer(metrics.IamRequestSec, lvsProducer, nil)
 		defer timer.ObserveDuration()
 
-		regions, err := loadRegions()
-		if err != nil {
-			return nil, err
-		}
-
-		var customSTSResolver = aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-			if service == sts.ServiceID && IsValidRegion(region, regions) {
-				return aws.Endpoint{
-					URL:           GetEndpointFromRegion(region),
-					SigningRegion: region,
-				}, nil
-			}
-
-			// returning EndpointNotFoundError will allow the service to fallback to it's default resolution
-			return aws.Endpoint{}, &aws.EndpointNotFoundError{}
-		})
-
 		cfg, err := config.LoadDefaultConfig(
-			context.TODO(),
-			config.WithEndpointResolverWithOptions(customSTSResolver),
+			ctx,
 		)
 		if err != nil {
 			return nil, err
 		}
+
 		svc := sts.NewFromConfig(cfg)
 		assumeRoleInput := sts.AssumeRoleInput{
 			DurationSeconds: aws.Int32(int32(sessionTTL.Seconds() * 2)),
@@ -224,18 +182,18 @@ func (iam *Client) AssumeRole(roleARN, roleSesionName, externalID string, remote
 		// Maybe use NewAssumeRoleProvider - https://github.com/aws/aws-sdk-go-v2/blob/credentials/v1.12.10/credentials/stscreds/assume_role_provider.go#L254
 		// That's wrapper for AssumeRole with some default values for options
 		// https://github.com/aws/aws-sdk-go-v2/blob/credentials/v1.12.10/credentials/stscreds/assume_role_provider.go#L270
-		resp, err := svc.AssumeRole(context.TODO(), &assumeRoleInput)
+		resp, err := svc.AssumeRole(ctx, &assumeRoleInput)
 		if err != nil {
 			return nil, err
 		}
 
 		return &Credentials{
-			AccessKeyID:     *resp.Credentials.AccessKeyId,
+			AccessKeyID:     aws.ToString(resp.Credentials.AccessKeyId),
 			Code:            "Success",
 			Expiration:      resp.Credentials.Expiration.Format("2006-01-02T15:04:05Z"),
 			LastUpdated:     time.Now().Format("2006-01-02T15:04:05Z"),
-			SecretAccessKey: *resp.Credentials.SecretAccessKey,
-			Token:           *resp.Credentials.SessionToken,
+			SecretAccessKey: aws.ToString(resp.Credentials.SecretAccessKey),
+			Token:           aws.ToString(resp.Credentials.SessionToken),
 			Type:            "AWS-HMAC",
 		}, nil
 	})

@@ -1,6 +1,7 @@
 package k8s
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -42,6 +43,7 @@ func (k8s *Client) createPodLW() *cache.ListWatch {
 
 // WatchForPods watches for pod changes.
 func (k8s *Client) WatchForPods(podEventLogger cache.ResourceEventHandler, resyncPeriod time.Duration) cache.InformerSynced {
+	//nolint:staticcheck // We intentionally keep using NewIndexerInformer for now
 	k8s.podIndexer, k8s.podController = cache.NewIndexerInformer(
 		k8s.createPodLW(),
 		&v1.Pod{},
@@ -60,6 +62,7 @@ func (k8s *Client) createNamespaceLW() *cache.ListWatch {
 
 // WatchForNamespaces watches for namespaces changes.
 func (k8s *Client) WatchForNamespaces(nsEventLogger cache.ResourceEventHandler, resyncPeriod time.Duration) cache.InformerSynced {
+	//nolint:staticcheck // We intentionally keep using NewIndexerInformer for now
 	k8s.namespaceIndexer, k8s.namespaceController = cache.NewIndexerInformer(
 		k8s.createNamespaceLW(),
 		&v1.Namespace{},
@@ -87,7 +90,7 @@ func (k8s *Client) ListNamespaces() []string {
 // PodByIP provides the representation of the pod itself being cached keyed off of it's IP
 // Returns an error if there are multiple pods attempting to be keyed off of the same IP
 // (Which happens when they of type `hostNetwork: true`)
-func (k8s *Client) PodByIP(IP string) (*v1.Pod, error) {
+func (k8s *Client) PodByIP(ctx context.Context, IP string) (*v1.Pod, error) {
 	pods, err := k8s.podIndexer.ByIndex(podIPIndexName, IP)
 	if err != nil {
 		return nil, err
@@ -109,7 +112,7 @@ func (k8s *Client) PodByIP(IP string) (*v1.Pod, error) {
 		}
 		return nil, fmt.Errorf("%d pods (%v) with the ip %s indexed", len(pods), podNames, IP)
 	}
-	pod, err := resolveDuplicatedIP(k8s, IP)
+	pod, err := resolveDuplicatedIP(ctx, k8s, IP)
 	if err != nil {
 		return nil, err
 	}
@@ -119,8 +122,8 @@ func (k8s *Client) PodByIP(IP string) (*v1.Pod, error) {
 // resolveDuplicatedIP queries the k8s api server trying to make a decision based on NON cached data
 // If the indexed pods all have HostNetwork = true the function return nil and the error message.
 // If we retrive a running pod that doesn't have HostNetwork = true and it is in Running state will return that.
-func resolveDuplicatedIP(k8s *Client, IP string) (*v1.Pod, error) {
-	runningPodList, err := k8s.CoreV1().Pods("").List(metav1.ListOptions{
+func resolveDuplicatedIP(ctx context.Context, k8s *Client, IP string) (*v1.Pod, error) {
+	runningPodList, err := k8s.CoreV1().Pods("").List(ctx, metav1.ListOptions{
 		FieldSelector: selector.OneTermEqualSelector("status.podIP", IP).String(),
 	})
 	metrics.K8sAPIDupReqCount.Inc()

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -50,14 +53,15 @@ func addFlags(s *server.Server, fs *pflag.FlagSet) {
 	fs.BoolVar(&s.Version, "version", false, "Print the version and exits")
 }
 
-func main() {
+func run(ctx context.Context) error {
 	s := server.NewServer()
+
 	addFlags(s, pflag.CommandLine)
 	pflag.Parse()
 
 	logLevel, err := log.ParseLevel(s.LogLevel)
 	if err != nil {
-		log.Fatalf("%s", err)
+		return err
 	}
 
 	if s.Verbose {
@@ -76,8 +80,9 @@ func main() {
 
 	if s.BaseRoleARN != "" {
 		if !iam.IsValidBaseARN(s.BaseRoleARN) {
-			log.Fatalf("Invalid --base-role-arn specified, expected: %s", iam.ARNRegexp.String())
+			return fmt.Errorf("Invalid --base-role-arn specified, expected: %s", iam.ARNRegexp.String())
 		}
+
 		if !strings.HasSuffix(s.BaseRoleARN, "/") {
 			s.BaseRoleARN += "/"
 		}
@@ -85,49 +90,61 @@ func main() {
 
 	if s.AutoDiscoverBaseArn {
 		if s.BaseRoleARN != "" {
-			log.Fatal("--auto-discover-base-arn cannot be used if --base-role-arn is specified")
+			return errors.New("--auto-discover-base-arn cannot be used if --base-role-arn is specified")
 		}
-		arn, err := iam.GetBaseArn()
+
+		arn, err := iam.GetBaseArn(ctx)
 		if err != nil {
-			log.Fatalf("%s", err)
+			return err
 		}
+
 		log.Infof("base ARN autodetected, %s", arn)
+
 		s.BaseRoleARN = arn
 	}
 
 	if s.AutoDiscoverDefaultRole {
 		if s.DefaultIAMRole != "" {
-			log.Fatalf("You cannot use --default-role and --auto-discover-default-role at the same time")
+			return errors.New("You cannot use --default-role and --auto-discover-default-role at the same time")
 		}
-		arn, err := iam.GetBaseArn()
+
+		arn, err := iam.GetBaseArn(ctx)
 		if err != nil {
-			log.Fatalf("%s", err)
+			return err
 		}
+
 		s.BaseRoleARN = arn
-		instanceIAMRole, err := iam.GetInstanceIAMRole()
+
+		instanceIAMRole, err := iam.GetInstanceIAMRole(ctx)
 		if err != nil {
-			log.Fatalf("%s", err)
+			return err
 		}
+
 		s.DefaultIAMRole = instanceIAMRole
+
 		log.Infof("Using instance IAMRole %s%s as default", s.BaseRoleARN, s.DefaultIAMRole)
 	}
 
 	if s.AddIPTablesRule {
 		if err := iptables.AddRule(s.AppPort, s.MetadataAddress, s.HostInterface, s.HostIP); err != nil {
-			log.Fatalf("%s", err)
+			return err
 		}
 	}
 
 	if s.EnablePodIdentityTags {
 		if s.EksClusterARN == "" {
-			log.Fatal("--eks-cluster-arn is required when using pod identity tags")
+			return errors.New("--eks-cluster-arn is required when using pod identity tags")
 		}
 		if s.EksClusterName == "" {
-			log.Fatal("--eks-cluster-name is required when using pod identity tags")
+			return errors.New("--eks-cluster-name is required when using pod identity tags")
 		}
 	}
 
-	if err := s.Run(s.APIServer, s.APIToken, s.NodeName, s.Insecure); err != nil {
-		log.Fatalf("%s", err)
+	return s.Run(ctx, s.APIServer, s.APIToken, s.NodeName, s.Insecure)
+}
+
+func main() {
+	if err := run(context.Background()); err != nil {
+		log.Fatal(err)
 	}
 }

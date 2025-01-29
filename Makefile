@@ -57,6 +57,11 @@ cover:
 	go tool cover -func=coverage.out
 	go tool cover -html=coverage.out
 
+.PHONY: cover-ci
+cover-ci:
+	./cover.sh
+	go tool cover -func=coverage.out
+
 coveralls:
 	./cover.sh
 	goveralls -coverprofile=coverage.out -service=circle-ci -repotoken=$(COVERALLS_TOKEN)
@@ -66,11 +71,11 @@ junit-test:
 
 check:
 	go install ./cmd
-	golangci-lint run --enable=gocyclo --concurrency=$(GOLANGCI_LINT_CONCURRENCY) --deadline=$(GOLANGCI_LINT_DEADLINE)s
+	golangci-lint run --enable=gocyclo --concurrency=$(GOLANGCI_LINT_CONCURRENCY) --timeout=$(GOLANGCI_LINT_DEADLINE)s
 
 check-all:
 	go install ./cmd
-	golangci-lint run --enable=gocyclo --concurrency=$(GOLANGCI_LINT_CONCURRENCY) --deadline=600s
+	golangci-lint run --enable=gocyclo --concurrency=$(GOLANGCI_LINT_CONCURRENCY) --timeout=600s
 
 docker:
 	docker build -t $(IMAGE_NAME):$(GIT_HASH) . $(DOCKER_BUILD_FLAGS)
