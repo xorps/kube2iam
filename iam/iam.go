@@ -188,12 +188,12 @@ func (iam *Client) AssumeRole(ctx context.Context, roleARN, roleSesionName, exte
 		}
 
 		return &Credentials{
-			AccessKeyID:     *resp.Credentials.AccessKeyId,
+			AccessKeyID:     aws.ToString(resp.Credentials.AccessKeyId),
 			Code:            "Success",
 			Expiration:      resp.Credentials.Expiration.Format("2006-01-02T15:04:05Z"),
 			LastUpdated:     time.Now().Format("2006-01-02T15:04:05Z"),
-			SecretAccessKey: *resp.Credentials.SecretAccessKey,
-			Token:           *resp.Credentials.SessionToken,
+			SecretAccessKey: aws.ToString(resp.Credentials.SecretAccessKey),
+			Token:           aws.ToString(resp.Credentials.SessionToken),
 			Type:            "AWS-HMAC",
 		}, nil
 	})
