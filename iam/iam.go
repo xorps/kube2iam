@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"io/ioutil"
+	"io"
 	"strings"
 	"time"
 
@@ -68,8 +68,8 @@ func getInstanceMetadata(ctx context.Context, path string) (string, error) {
 	}
 	// https://aws.github.io/aws-sdk-go-v2/docs/making-requests/#responses-with-ioreadcloser
 	defer metadataResult.Content.Close()
-	instanceId, err := ioutil.ReadAll(metadataResult.Content)
 
+	instanceId, err := io.ReadAll(metadataResult.Content)
 	if err != nil {
 		return "", fmt.Errorf("Expect to read content [%s] from bytes, got %v", err, path)
 	}
@@ -145,31 +145,6 @@ func IsValidRegion(promisedLand string, regions *ec2.DescribeRegionsOutput) bool
 	return false
 }
 
-// Regions list to validate input region name
-//
-// https://stackoverflow.com/a/69935735/3945261
-func loadRegions(ctx context.Context) (*ec2.DescribeRegionsOutput, error) {
-	regionsCache, err := cache.Fetch("awsRegions", time.Hour*24*30, func() (interface{}, error) {
-		cfg, err := config.LoadDefaultConfig(ctx)
-		if err != nil {
-			return nil, err
-		}
-		ec2Client := ec2.NewFromConfig(cfg)
-		r, err := ec2Client.DescribeRegions(ctx, &ec2.DescribeRegionsInput{})
-		if err != nil {
-			return nil, err
-		}
-
-		return r, nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return regionsCache.Value().(*ec2.DescribeRegionsOutput), nil
-}
-
 // AssumeRole returns an IAM role Credentials using AWS STS.
 func (iam *Client) AssumeRole(ctx context.Context, roleARN, roleSesionName, externalID string, remoteIP string, sessionTTL time.Duration, tags []types.Tag) (*Credentials, error) {
 	hitCache := true
@@ -185,30 +160,13 @@ func (iam *Client) AssumeRole(ctx context.Context, roleARN, roleSesionName, exte
 		timer := metrics.NewFunctionTimer(metrics.IamRequestSec, lvsProducer, nil)
 		defer timer.ObserveDuration()
 
-		regions, err := loadRegions(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		var customSTSResolver = aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-			if service == sts.ServiceID && IsValidRegion(region, regions) {
-				return aws.Endpoint{
-					URL:           GetEndpointFromRegion(region),
-					SigningRegion: region,
-				}, nil
-			}
-
-			// returning EndpointNotFoundError will allow the service to fallback to it's default resolution
-			return aws.Endpoint{}, &aws.EndpointNotFoundError{}
-		})
-
 		cfg, err := config.LoadDefaultConfig(
 			ctx,
-			config.WithEndpointResolverWithOptions(customSTSResolver),
 		)
 		if err != nil {
 			return nil, err
 		}
+
 		svc := sts.NewFromConfig(cfg)
 		assumeRoleInput := sts.AssumeRoleInput{
 			DurationSeconds: aws.Int32(int32(sessionTTL.Seconds() * 2)),

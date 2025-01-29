@@ -43,6 +43,7 @@ func (k8s *Client) createPodLW() *cache.ListWatch {
 
 // WatchForPods watches for pod changes.
 func (k8s *Client) WatchForPods(podEventLogger cache.ResourceEventHandler, resyncPeriod time.Duration) cache.InformerSynced {
+	//nolint:staticcheck // We intentionally keep using NewIndexerInformer for now
 	k8s.podIndexer, k8s.podController = cache.NewIndexerInformer(
 		k8s.createPodLW(),
 		&v1.Pod{},
@@ -61,6 +62,7 @@ func (k8s *Client) createNamespaceLW() *cache.ListWatch {
 
 // WatchForNamespaces watches for namespaces changes.
 func (k8s *Client) WatchForNamespaces(nsEventLogger cache.ResourceEventHandler, resyncPeriod time.Duration) cache.InformerSynced {
+	//nolint:staticcheck // We intentionally keep using NewIndexerInformer for now
 	k8s.namespaceIndexer, k8s.namespaceController = cache.NewIndexerInformer(
 		k8s.createNamespaceLW(),
 		&v1.Namespace{},

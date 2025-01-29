@@ -238,7 +238,7 @@ func (s *Server) doHealthcheck(ctx context.Context) {
 	instanceId, err := s.iam.GetInstanceId(ctx)
 	if err != nil {
 		errMsg = fmt.Sprintf("Error getting instance id %+v", err)
-		log.Errorf(errMsg)
+		log.Errorf("%s", errMsg)
 		return
 	}
 
