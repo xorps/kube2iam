@@ -22,7 +22,7 @@ type RoleMapper struct {
 	iamExternalIDKey           string
 	namespaceKey               string
 	namespaceRestriction       bool
-	iam                        *iam.Client
+	iam                        iam.Client
 	store                      store
 	namespaceRestrictionFormat string
 }
@@ -174,17 +174,32 @@ func (r *RoleMapper) DumpDebugInfo(ctx context.Context) map[string]interface{} {
 	return output
 }
 
-// NewRoleMapper returns a new RoleMapper for use.
-func NewRoleMapper(roleKey string, roleSessionNameKey string, externalIDKey string, defaultRole string, namespaceRestriction bool, namespaceKey string, iamInstance *iam.Client, kubeStore store, namespaceRestrictionFormat string) *RoleMapper {
+type RoleMapperArgs struct {
+	RoleKey                    string
+	RoleSessionNameKey         string
+	ExternalIDKey              string
+	DefaultRoleARN             string
+	NamespaceRestriction       bool
+	NamespaceKey               string
+	IamInstance                iam.Client
+	KubeStore                  store
+	NamespaceRestrictionFormat string
+}
+
+func New(args *RoleMapperArgs) *RoleMapper {
+	if args == nil {
+		args = &RoleMapperArgs{}
+	}
+
 	return &RoleMapper{
-		defaultRoleARN:             iamInstance.RoleARN(defaultRole),
-		iamRoleKey:                 roleKey,
-		iamRoleSessionNameKey:      roleSessionNameKey,
-		iamExternalIDKey:           externalIDKey,
-		namespaceKey:               namespaceKey,
-		namespaceRestriction:       namespaceRestriction,
-		iam:                        iamInstance,
-		store:                      kubeStore,
-		namespaceRestrictionFormat: namespaceRestrictionFormat,
+		defaultRoleARN:             args.DefaultRoleARN,
+		iamRoleKey:                 args.RoleKey,
+		iamRoleSessionNameKey:      args.RoleSessionNameKey,
+		iamExternalIDKey:           args.ExternalIDKey,
+		namespaceKey:               args.NamespaceKey,
+		namespaceRestriction:       args.NamespaceRestriction,
+		iam:                        args.IamInstance,
+		store:                      args.KubeStore,
+		namespaceRestrictionFormat: args.NamespaceRestrictionFormat,
 	}
 }

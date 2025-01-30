@@ -5,14 +5,14 @@ go 1.23.5
 require (
 	github.com/aws/aws-sdk-go-v2 v1.34.0
 	github.com/aws/aws-sdk-go-v2/config v1.29.2
+	github.com/aws/aws-sdk-go-v2/credentials v1.17.55
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.25
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.202.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.10
 	github.com/aws/smithy-go v1.22.2
 	github.com/cenkalti/backoff/v5 v5.0.1
 	github.com/coreos/go-iptables v0.8.0
 	github.com/gorilla/mux v1.8.1
-	github.com/karlseguin/ccache v2.0.3+incompatible
+	github.com/karlseguin/ccache/v3 v3.0.6
 	github.com/prometheus/client_golang v1.20.5
 	github.com/ryanuber/go-glob v1.0.0
 	github.com/sirupsen/logrus v1.9.3
@@ -23,7 +23,6 @@ require (
 )
 
 require (
-	github.com/aws/aws-sdk-go-v2/credentials v1.17.55 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.29 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.29 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.2 // indirect
@@ -48,7 +47,6 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/karlseguin/expect v1.0.1 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
@@ -58,7 +56,6 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
-	github.com/wsxiaoys/terminal v0.0.0-20160513160801-0940f3fc43a0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/net v0.34.0 // indirect
 	golang.org/x/oauth2 v0.25.0 // indirect

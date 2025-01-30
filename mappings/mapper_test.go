@@ -16,6 +16,32 @@ const (
 	namespaceKey    = "namespaceKey"
 )
 
+type mockIamclient struct {
+	baseARN string
+}
+
+var _ iam.Client = (*mockIamclient)(nil)
+
+func (c *mockIamclient) AssumeRole(ctx context.Context, args *iam.AssumeRoleArgs) (*iam.Credentials, error) {
+	return nil, nil
+}
+
+func (c *mockIamclient) BaseRoleARN() string {
+	if c == nil {
+		return ""
+	}
+
+	return c.baseARN
+}
+
+func (c *mockIamclient) Endpoint() string {
+	return ""
+}
+
+func (c *mockIamclient) RoleARN(role string) string {
+	return iam.RoleARN(c.baseARN, role)
+}
+
 func TestExtractRoleARN(t *testing.T) {
 	var roleExtractionTests = []struct {
 		test        string
@@ -71,7 +97,7 @@ func TestExtractRoleARN(t *testing.T) {
 			rp.iamRoleKey = "roleKey"
 			rp.iamExternalIDKey = "externalIDKey"
 			rp.defaultRoleARN = tt.defaultRole
-			rp.iam = &iam.Client{BaseARN: defaultBaseRole}
+			rp.iam = &mockIamclient{baseARN: defaultBaseRole}
 
 			pod := &v1.Pod{}
 			pod.Annotations = tt.annotations
@@ -359,20 +385,20 @@ func TestCheckRoleForNamespace(t *testing.T) {
 
 	for _, tt := range roleCheckTests {
 		t.Run(tt.test, func(t *testing.T) {
-			rp := NewRoleMapper(
-				roleKey,
-				"",
-				externalIDKey,
-				tt.defaultArn,
-				tt.namespaceRestriction,
-				namespaceKey,
-				&iam.Client{BaseARN: defaultBaseRole},
-				&storeMock{
+			rp := New(&RoleMapperArgs{
+				RoleKey:              roleKey,
+				RoleSessionNameKey:   "",
+				ExternalIDKey:        externalIDKey,
+				DefaultRoleARN:       tt.defaultArn,
+				NamespaceRestriction: tt.namespaceRestriction,
+				NamespaceKey:         namespaceKey,
+				IamInstance:          &mockIamclient{baseARN: defaultBaseRole},
+				KubeStore: &storeMock{
 					namespace:   tt.namespace,
 					annotations: tt.namespaceAnnotations,
 				},
-				tt.namespaceRestrictionFormat,
-			)
+				NamespaceRestrictionFormat: tt.namespaceRestrictionFormat,
+			})
 
 			resp := rp.checkRoleForNamespace(tt.roleARN, tt.namespace)
 			if resp != tt.expectedResult {

@@ -22,11 +22,11 @@ func IsValidBaseARN(arn string) bool {
 }
 
 // RoleARN returns the full iam role ARN.
-func (iam *Client) RoleARN(role string) string {
+func RoleARN(baseArn, role string) string {
 	if strings.HasPrefix(strings.ToLower(role), fullArnPrefix) {
 		return role
 	}
-	return fmt.Sprintf("%s%s", iam.BaseARN, role)
+	return fmt.Sprintf("%s%s", baseArn, role)
 }
 
 // GetBaseArn get the base ARN from metadata service.
