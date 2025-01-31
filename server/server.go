@@ -214,7 +214,11 @@ type HealthResponse struct {
 	InstanceID string `json:"instanceId"`
 }
 
-func (s *Server) healthHandler(logger *log.Entry, w http.ResponseWriter, r *http.Request) {
+func (s *Server) healthHandler(
+	log *log.Entry, //nolint: unused
+	w http.ResponseWriter,
+	r *http.Request, //nolint: unused
+) {
 	// healthHandler reports the last result of a timed healthcheck that repeats in the background.
 	// The healthcheck logic is performed in doHealthcheck and saved into Server struct fields.
 	// This "caching" of results allows the healthcheck to be monitored at a high request rate by external systems
@@ -431,64 +435,31 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 type Args struct {
-	AppPort                    string
-	MetricsPort                string
-	IAMRoleKey                 string
-	IAMRoleSessionNameKey      string
-	IAMExternalIDKey           string
-	IAMRoleSessionTTL          time.Duration
-	EnablePodIdentityTags      bool
-	EksClusterName             string
-	EksClusterARN              string
-	MetadataAddress            string
-	HostIP                     string
-	Token                      string
-	NodeName                   string
-	Insecure                   bool
-	ResolveDupIPs              bool
-	AssumeRoleARN              string
-	BaseRoleARN                string
-	NamespaceKey               string
-	CacheResyncPeriod          time.Duration
-	CacheSyncAttempts          int
-	Debug                      bool
-	BackoffMaxElapsedTime      time.Duration
-	BackoffMaxInterval         time.Duration
-	HealthcheckInterval        time.Duration
-	NamespaceRestrictionFormat string
-	NamespaceRestriction       bool
-	DefaultRoleARN             string
+	AppPort               string
+	MetricsPort           string
+	IAMRoleKey            string
+	IAMRoleSessionTTL     time.Duration
+	EnablePodIdentityTags bool
+	EksClusterName        string
+	EksClusterARN         string
+	MetadataAddress       string
+	HostIP                string
+	NamespaceKey          string
+	CacheResyncPeriod     time.Duration
+	CacheSyncAttempts     int
+	Debug                 bool
+	BackoffMaxElapsedTime time.Duration
+	BackoffMaxInterval    time.Duration
+	HealthcheckInterval   time.Duration
+	Iam                   iam.Client
+	K8s                   *k8s.Client
+	RoleMapper            *mappings.RoleMapper
 }
 
-func New(ctx context.Context, args *Args) (*Server, error) {
+func New(args *Args) (*Server, error) {
 	if args == nil {
 		args = &Args{} //nolint:exhaustruct
 	}
-
-	k, err := k8s.NewClient(args.HostIP, args.Token, args.NodeName, args.Insecure, args.ResolveDupIPs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create k8s cliet: %w", err)
-	}
-
-	i, err := iam.New(ctx, &iam.Args{
-		AssumeRoleARN: args.AssumeRoleARN,
-		BaseRoleARN:   args.BaseRoleARN,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create iam client: %w", err)
-	}
-
-	roleMapper := mappings.New(&mappings.RoleMapperArgs{
-		RoleKey:                    args.IAMRoleKey,
-		RoleSessionNameKey:         args.IAMRoleSessionNameKey,
-		ExternalIDKey:              args.IAMExternalIDKey,
-		DefaultRoleARN:             args.DefaultRoleARN,
-		NamespaceRestriction:       args.NamespaceRestriction,
-		NamespaceKey:               args.NamespaceKey,
-		IamInstance:                i,
-		KubeStore:                  k,
-		NamespaceRestrictionFormat: args.NamespaceRestrictionFormat,
-	})
 
 	s := Server{
 		appPort:               args.AppPort,
@@ -500,13 +471,13 @@ func New(ctx context.Context, args *Args) (*Server, error) {
 		eksClusterARN:         args.EksClusterARN,
 		metadataAddress:       args.MetadataAddress,
 		hostIP:                args.HostIP,
-		roleMapper:            roleMapper,
-		k8s:                   k,
+		roleMapper:            args.RoleMapper,
+		k8s:                   args.K8s,
 		namespaceKey:          args.NamespaceKey,
 		cacheResyncPeriod:     args.CacheResyncPeriod,
 		cacheSyncAttempts:     args.CacheSyncAttempts,
 		debug:                 args.Debug,
-		iam:                   i,
+		iam:                   args.Iam,
 		backoffMaxElapsedTime: args.BackoffMaxElapsedTime,
 		backoffMaxInterval:    args.BackoffMaxInterval,
 		instanceID:            atomic.Pointer[string]{},

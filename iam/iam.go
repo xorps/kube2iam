@@ -34,9 +34,9 @@ type AssumeRoleArgs struct {
 }
 
 type Client interface {
-	AssumeRole(ctx context.Context, args *AssumeRoleArgs) (*Credentials, error)
+	AssumeRole(context.Context, *AssumeRoleArgs) (*Credentials, error)
 	Endpoint() string
-	RoleARN(role string) string
+	RoleARN(string) string
 	BaseRoleARN() string
 }
 

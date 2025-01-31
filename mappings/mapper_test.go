@@ -22,7 +22,10 @@ type mockIamclient struct {
 
 var _ iam.Client = (*mockIamclient)(nil)
 
-func (c *mockIamclient) AssumeRole(ctx context.Context, args *iam.AssumeRoleArgs) (*iam.Credentials, error) {
+func (c *mockIamclient) AssumeRole(
+	ctx context.Context, //nolint: unused
+	args *iam.AssumeRoleArgs, //nolint: unused
+) (*iam.Credentials, error) {
 	return nil, nil
 }
 

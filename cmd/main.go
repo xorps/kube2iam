@@ -12,6 +12,8 @@ import (
 
 	"github.com/jtblin/kube2iam/iam"
 	"github.com/jtblin/kube2iam/iptables"
+	"github.com/jtblin/kube2iam/k8s"
+	"github.com/jtblin/kube2iam/mappings"
 	"github.com/jtblin/kube2iam/server"
 	"github.com/jtblin/kube2iam/version"
 )
@@ -71,7 +73,7 @@ func run(ctx context.Context) error {
 		useRegionalStsEndpoint     bool
 		verbose                    bool
 		printVersion               bool
-		assumeRoleArn              string
+		assumeRoleARN              string
 		cacheSyncAttempts          int
 		healthcheckInterval        time.Duration
 	)
@@ -112,7 +114,7 @@ func run(ctx context.Context) error {
 	fs.BoolVar(&useRegionalStsEndpoint, "use-regional-sts-endpoint", false, "use the regional sts endpoint if AWS_REGION is set")
 	fs.BoolVar(&verbose, "verbose", false, "Verbose")
 	fs.BoolVar(&printVersion, "version", false, "Print the version and exits")
-	fs.StringVar(&assumeRoleArn, "assume-role-arn", "", "role to assume")
+	fs.StringVar(&assumeRoleARN, "assume-role-arn", "", "role to assume")
 	fs.IntVar(&cacheSyncAttempts, "cache-sync-attempts", defaultCacheSyncAttempts, "number of attempts to wait for cache sync")
 	fs.DurationVar(&healthcheckInterval, "healthcheck-interval", defaultHealthcheckInterval, "health check interval")
 
@@ -199,34 +201,51 @@ func run(ctx context.Context) error {
 		}
 	}
 
-	s, err := server.New(ctx, &server.Args{
-		AppPort:                    appPort,
-		MetricsPort:                metricsPort,
-		IAMRoleKey:                 iamRoleKey,
-		IAMRoleSessionNameKey:      iamRoleSessionNameKey,
-		IAMExternalIDKey:           iamExternalIDKey,
-		IAMRoleSessionTTL:          iamRoleSessionTTL,
-		EnablePodIdentityTags:      enablePodIdentityTags,
-		EksClusterName:             eksClusterName,
-		EksClusterARN:              eksClusterARN,
-		HostIP:                     hostIP,
-		Token:                      apiToken,
-		NodeName:                   nodeName,
-		Insecure:                   insecure,
-		ResolveDupIPs:              resolveDupIPs,
-		AssumeRoleARN:              assumeRoleArn,
-		MetadataAddress:            metadataAddress,
-		BaseRoleARN:                baseRoleARN,
-		NamespaceKey:               namespaceKey,
-		CacheResyncPeriod:          cacheResyncPeriod,
-		CacheSyncAttempts:          cacheSyncAttempts,
-		Debug:                      debug,
-		BackoffMaxElapsedTime:      backoffMaxElapsedTime,
-		BackoffMaxInterval:         backoffMaxInterval,
-		HealthcheckInterval:        healthcheckInterval,
-		NamespaceRestrictionFormat: namespaceRestrictionFormat,
-		NamespaceRestriction:       namespaceRestriction,
+	k, err := k8s.NewClient(hostIP, apiToken, nodeName, insecure, resolveDupIPs)
+	if err != nil {
+		return fmt.Errorf("failed to create k8s cliet: %w", err)
+	}
+
+	i, err := iam.New(ctx, &iam.Args{
+		AssumeRoleARN: assumeRoleARN,
+		BaseRoleARN:   baseRoleARN,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create iam client: %w", err)
+	}
+
+	roleMapper := mappings.New(&mappings.RoleMapperArgs{
+		RoleKey:                    iamRoleKey,
+		RoleSessionNameKey:         iamRoleSessionNameKey,
+		ExternalIDKey:              iamExternalIDKey,
 		DefaultRoleARN:             defaultIAMRole,
+		NamespaceRestriction:       namespaceRestriction,
+		NamespaceKey:               namespaceKey,
+		IamInstance:                i,
+		KubeStore:                  k,
+		NamespaceRestrictionFormat: namespaceRestrictionFormat,
+	})
+
+	s, err := server.New(&server.Args{
+		AppPort:               appPort,
+		MetricsPort:           metricsPort,
+		IAMRoleKey:            iamRoleKey,
+		IAMRoleSessionTTL:     iamRoleSessionTTL,
+		EnablePodIdentityTags: enablePodIdentityTags,
+		EksClusterName:        eksClusterName,
+		EksClusterARN:         eksClusterARN,
+		HostIP:                hostIP,
+		MetadataAddress:       metadataAddress,
+		NamespaceKey:          namespaceKey,
+		CacheResyncPeriod:     cacheResyncPeriod,
+		CacheSyncAttempts:     cacheSyncAttempts,
+		Debug:                 debug,
+		BackoffMaxElapsedTime: backoffMaxElapsedTime,
+		BackoffMaxInterval:    backoffMaxInterval,
+		HealthcheckInterval:   healthcheckInterval,
+		RoleMapper:            roleMapper,
+		Iam:                   i,
+		K8s:                   k,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
