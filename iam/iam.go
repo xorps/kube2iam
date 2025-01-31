@@ -58,11 +58,7 @@ func (c *DefaultClient) AssumeRole(ctx context.Context, args *AssumeRoleArgs) (*
 		args = &AssumeRoleArgs{} //nolint:exhaustruct
 	}
 
-	hitCache := true
-
-	item, err := c.cache.Fetch(args.RoleARN, args.SessionTTL, func() (*Credentials, error) {
-		hitCache = false
-
+	creds, cacheHit, err := cacheFetch(c.cache, args.RoleARN, args.SessionTTL, func() (*Credentials, error) {
 		// Set up a prometheus timer to track the AWS request duration. It stores the timer value when
 		// observed. A function gets err at observation time to report the status of the request after the function returns.
 		var err error
@@ -103,15 +99,13 @@ func (c *DefaultClient) AssumeRole(ctx context.Context, args *AssumeRoleArgs) (*
 		return &creds, nil
 	})
 
-	if hitCache {
+	if cacheHit {
 		metrics.IamCacheHitCount.WithLabelValues(args.RoleARN).Inc()
 	}
 
 	if err != nil {
 		return nil, err
 	}
-
-	creds := item.Value()
 
 	return creds, nil
 }
@@ -171,4 +165,27 @@ func New(ctx context.Context, args *Args) (*DefaultClient, error) {
 	}
 
 	return &client, nil
+}
+
+func cacheFetch[T any](c *ccache.Cache[T], key string, duration time.Duration, fetch func() (T, error)) (value T, cacheHit bool, err error) {
+	if c == nil {
+		err = errors.New("cache is nil")
+		return
+	}
+
+	item := c.Get(key)
+	if item != nil && !item.Expired() {
+		cacheHit = true
+		value = item.Value()
+		return
+	}
+
+	value, err = fetch()
+	if err != nil {
+		return
+	}
+
+	c.Set(key, value, duration)
+
+	return
 }
