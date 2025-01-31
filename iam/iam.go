@@ -55,7 +55,7 @@ func (c *DefaultClient) AssumeRole(ctx context.Context, args *AssumeRoleArgs) (*
 	}
 
 	if args == nil {
-		args = &AssumeRoleArgs{}
+		args = &AssumeRoleArgs{} //nolint:exhaustruct
 	}
 
 	hitCache := true
@@ -71,7 +71,7 @@ func (c *DefaultClient) AssumeRole(ctx context.Context, args *AssumeRoleArgs) (*
 		}, nil)
 		defer timer.ObserveDuration()
 
-		input := sts.AssumeRoleInput{
+		input := sts.AssumeRoleInput{ //nolint:exhaustruct
 			DurationSeconds: aws.Int32(int32(args.SessionTTL.Seconds() * 2)),
 			RoleArn:         aws.String(args.RoleARN),
 			RoleSessionName: aws.String(sessionName(args.RoleARN, args.RoleSessionName, args.RemoteIP)),
@@ -148,7 +148,7 @@ type Args struct {
 
 func New(ctx context.Context, args *Args) (*DefaultClient, error) {
 	if args == nil {
-		args = &Args{}
+		args = &Args{} //nolint:exhaustruct
 	}
 
 	cfg, err := config.LoadDefaultConfig(ctx)

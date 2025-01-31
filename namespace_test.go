@@ -36,7 +36,7 @@ func TestGetNamespaceRoleAnnotation(t *testing.T) {
 
 	for _, tt := range parseTests {
 		t.Run(tt.test, func(t *testing.T) {
-			ns := &v1.Namespace{}
+			ns := &v1.Namespace{} //nolint:exhaustruct
 			ns.Annotations = map[string]string{"namespaceKey": tt.annotation}
 			resp := GetNamespaceRoleAnnotation(ns, "namespaceKey")
 

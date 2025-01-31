@@ -130,7 +130,7 @@ func run(ctx context.Context) error {
 	}
 
 	if strings.ToLower(logFormat) == "json" {
-		log.SetFormatter(&log.JSONFormatter{})
+		log.SetFormatter(&log.JSONFormatter{}) //nolint:exhaustruct
 	}
 
 	if printVersion {
@@ -139,7 +139,7 @@ func run(ctx context.Context) error {
 
 	if baseRoleARN != "" {
 		if !iam.IsValidBaseARN(baseRoleARN) {
-			return fmt.Errorf("Invalid --base-role-arn specified, expected: %s", iam.ARNRegexp.String())
+			return fmt.Errorf("invalid --base-role-arn specified, expected: %s", iam.ARNRegexp.String())
 		}
 
 		if !strings.HasSuffix(baseRoleARN, "/") {
@@ -164,7 +164,7 @@ func run(ctx context.Context) error {
 
 	if autoDiscoverDefaultRole {
 		if defaultIAMRole != "" {
-			return errors.New("You cannot use --default-role and --auto-discover-default-role at the same time")
+			return errors.New("you cannot use --default-role and --auto-discover-default-role at the same time")
 		}
 
 		arn, err := iam.GetBaseArn(ctx)
@@ -200,15 +200,33 @@ func run(ctx context.Context) error {
 	}
 
 	s, err := server.New(ctx, &server.Args{
-		IAMRoleKey:            iamRoleKey,
-		IAMRoleSessionNameKey: iamRoleSessionNameKey,
-		IAMExternalIDKey:      iamExternalIDKey,
-		Host:                  hostIP,
-		Token:                 apiToken,
-		NodeName:              nodeName,
-		Insecure:              insecure,
-		ResolveDupIPs:         resolveDupIPs,
-		AssumeRoleARN:         assumeRoleArn,
+		AppPort:                    appPort,
+		MetricsPort:                metricsPort,
+		IAMRoleKey:                 iamRoleKey,
+		IAMRoleSessionNameKey:      iamRoleSessionNameKey,
+		IAMExternalIDKey:           iamExternalIDKey,
+		IAMRoleSessionTTL:          iamRoleSessionTTL,
+		EnablePodIdentityTags:      enablePodIdentityTags,
+		EksClusterName:             eksClusterName,
+		EksClusterARN:              eksClusterARN,
+		HostIP:                     hostIP,
+		Token:                      apiToken,
+		NodeName:                   nodeName,
+		Insecure:                   insecure,
+		ResolveDupIPs:              resolveDupIPs,
+		AssumeRoleARN:              assumeRoleArn,
+		MetadataAddress:            metadataAddress,
+		BaseRoleARN:                baseRoleARN,
+		NamespaceKey:               namespaceKey,
+		CacheResyncPeriod:          cacheResyncPeriod,
+		CacheSyncAttempts:          cacheSyncAttempts,
+		Debug:                      debug,
+		BackoffMaxElapsedTime:      backoffMaxElapsedTime,
+		BackoffMaxInterval:         backoffMaxInterval,
+		HealthcheckInterval:        healthcheckInterval,
+		NamespaceRestrictionFormat: namespaceRestrictionFormat,
+		NamespaceRestriction:       namespaceRestriction,
+		DefaultRoleARN:             defaultIAMRole,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)

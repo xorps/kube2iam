@@ -188,7 +188,7 @@ type RoleMapperArgs struct {
 
 func New(args *RoleMapperArgs) *RoleMapper {
 	if args == nil {
-		args = &RoleMapperArgs{}
+		args = &RoleMapperArgs{} //nolint:exhaustruct
 	}
 
 	return &RoleMapper{

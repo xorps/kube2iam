@@ -119,3 +119,7 @@ clean:
 	rm -rf build/bin/*
 
 .PHONY: build version
+
+.PHONY: lint
+lint:
+	golangci-lint run
