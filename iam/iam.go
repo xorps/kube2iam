@@ -111,11 +111,10 @@ func (c *DefaultClient) AssumeRole(ctx context.Context, args *AssumeRoleArgs) (*
 }
 
 func (s *DefaultClient) Endpoint() string {
-	if s == nil {
+	if s == nil || s.svc == nil {
 		return ""
 	}
 
-	// FIXME: proper endpoint resolver
 	return aws.ToString(s.svc.Options().BaseEndpoint)
 }
 
