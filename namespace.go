@@ -20,7 +20,10 @@ func (h *NamespaceHandler) namespaceFields(ns *v1.Namespace) log.Fields {
 }
 
 // OnAdd called with a namespace is added to k8s.
-func (h *NamespaceHandler) OnAdd(obj interface{}, _ bool) {
+func (h *NamespaceHandler) OnAdd(
+	obj interface{},
+	_ bool, //nolint: unused
+) {
 	ns, ok := obj.(*v1.Namespace)
 	if !ok {
 		log.Errorf("Expected Namespace but OnAdd handler received %+v", obj)

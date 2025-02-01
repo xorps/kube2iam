@@ -46,7 +46,7 @@ func (k8s *Client) WatchForPods(podEventLogger cache.ResourceEventHandler, resyn
 	//nolint:staticcheck // We intentionally keep using NewIndexerInformer for now
 	k8s.podIndexer, k8s.podController = cache.NewIndexerInformer(
 		k8s.createPodLW(),
-		&v1.Pod{},
+		&v1.Pod{}, //nolint:exhaustruct
 		resyncPeriod,
 		podEventLogger,
 		cache.Indexers{podIPIndexName: kube2iam.PodIPIndexFunc},
@@ -65,7 +65,7 @@ func (k8s *Client) WatchForNamespaces(nsEventLogger cache.ResourceEventHandler, 
 	//nolint:staticcheck // We intentionally keep using NewIndexerInformer for now
 	k8s.namespaceIndexer, k8s.namespaceController = cache.NewIndexerInformer(
 		k8s.createNamespaceLW(),
-		&v1.Namespace{},
+		&v1.Namespace{}, //nolint:exhaustruct
 		resyncPeriod,
 		nsEventLogger,
 		cache.Indexers{namespaceIndexName: kube2iam.NamespaceIndexFunc},
@@ -123,7 +123,7 @@ func (k8s *Client) PodByIP(ctx context.Context, IP string) (*v1.Pod, error) {
 // If the indexed pods all have HostNetwork = true the function return nil and the error message.
 // If we retrive a running pod that doesn't have HostNetwork = true and it is in Running state will return that.
 func resolveDuplicatedIP(ctx context.Context, k8s *Client, IP string) (*v1.Pod, error) {
-	runningPodList, err := k8s.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+	runningPodList, err := k8s.CoreV1().Pods("").List(ctx, metav1.ListOptions{ //nolint:exhaustruct
 		FieldSelector: selector.OneTermEqualSelector("status.podIP", IP).String(),
 	})
 	metrics.K8sAPIDupReqCount.Inc()
@@ -159,11 +159,12 @@ func (k8s *Client) NamespaceByName(namespaceName string) (*v1.Namespace, error) 
 func NewClient(host, token, nodeName string, insecure, resolveDupIPs bool) (*Client, error) {
 	var config *rest.Config
 	var err error
+
 	if host != "" && token != "" {
-		config = &rest.Config{
+		config = &rest.Config{ //nolint:exhaustruct
 			Host:        host,
 			BearerToken: token,
-			TLSClientConfig: rest.TLSClientConfig{
+			TLSClientConfig: rest.TLSClientConfig{ //nolint:exhaustruct
 				Insecure: insecure,
 			},
 		}
@@ -173,9 +174,21 @@ func NewClient(host, token, nodeName string, insecure, resolveDupIPs bool) (*Cli
 			return nil, err
 		}
 	}
+
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, err
 	}
-	return &Client{Clientset: client, nodeName: nodeName, resolveDupIPs: resolveDupIPs}, nil
+
+	c := Client{
+		Clientset:           client,
+		nodeName:            nodeName,
+		resolveDupIPs:       resolveDupIPs,
+		namespaceController: nil,
+		namespaceIndexer:    nil,
+		podController:       nil,
+		podIndexer:          nil,
+	}
+
+	return &c, nil
 }

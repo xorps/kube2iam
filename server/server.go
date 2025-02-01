@@ -29,25 +29,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
-const (
-	defaultAppPort                    = "8181"
-	defaultCacheSyncAttempts          = 10
-	defaultIAMRoleKey                 = "iam.amazonaws.com/role"
-	defaultIAMRoleSessionNameKey      = "iam.amazonaws.com/session-name"
-	defaultIAMExternalID              = "iam.amazonaws.com/external-id"
-	defaultLogLevel                   = "info"
-	defaultLogFormat                  = "text"
-	defaultMaxElapsedTime             = 2 * time.Second
-	defaultIAMRoleSessionTTL          = 15 * time.Minute
-	defaultMaxInterval                = 1 * time.Second
-	defaultMetadataAddress            = "169.254.169.254"
-	defaultNamespaceKey               = "iam.amazonaws.com/allowed-roles"
-	defaultCacheResyncPeriod          = 30 * time.Minute
-	defaultResolveDupIPs              = false
-	defaultNamespaceRestrictionFormat = "glob"
-	healthcheckInterval               = 30 * time.Second
-)
-
 var tokenRouteRegexp = regexp.MustCompile("^/?[^/]+/api/token$")
 
 // Keeps track of the names of registered handlers for metric value/label initialization
@@ -56,46 +37,28 @@ var registeredHandlerNames []string
 // Server encapsulates all of the parameters necessary for starting up
 // the server. These can either be set via command line or directly.
 type Server struct {
-	APIServer                  string
-	APIToken                   string
-	AppPort                    string
-	MetricsPort                string
-	BaseRoleARN                string
-	DefaultIAMRole             string
-	IAMRoleKey                 string
-	IAMRoleSessionNameKey      string
-	IAMExternalID              string
-	IAMRoleSessionTTL          time.Duration
-	EnablePodIdentityTags      bool
-	EksClusterName             string
-	EksClusterARN              string
-	MetadataAddress            string
-	HostInterface              string
-	HostIP                     string
-	NodeName                   string
-	NamespaceKey               string
-	CacheResyncPeriod          time.Duration
-	LogLevel                   string
-	LogFormat                  string
-	NamespaceRestrictionFormat string
-	ResolveDupIPs              bool
-	UseRegionalStsEndpoint     bool
-	AddIPTablesRule            bool
-	AutoDiscoverBaseArn        bool
-	AutoDiscoverDefaultRole    bool
-	Debug                      bool
-	Insecure                   bool
-	NamespaceRestriction       bool
-	Verbose                    bool
-	Version                    bool
-	iam                        *iam.Client
-	k8s                        *k8s.Client
-	roleMapper                 *mappings.RoleMapper
-	BackoffMaxElapsedTime      time.Duration
-	BackoffMaxInterval         time.Duration
-	InstanceID                 atomic.Pointer[string]
-	HealthcheckFailReason      atomic.Pointer[string]
-	healthcheckTicker          sync.Once
+	appPort               string
+	metricsPort           string
+	iamRoleKey            string
+	iamRoleSessionTTL     time.Duration
+	enablePodIdentityTags bool
+	eksClusterName        string
+	eksClusterARN         string
+	metadataAddress       string
+	hostIP                string
+	namespaceKey          string
+	cacheResyncPeriod     time.Duration
+	cacheSyncAttempts     int
+	debug                 bool
+	iam                   iam.Client
+	roleMapper            *mappings.RoleMapper
+	k8s                   *k8s.Client
+	backoffMaxElapsedTime time.Duration
+	backoffMaxInterval    time.Duration
+	instanceID            atomic.Pointer[string]
+	healthcheckFailReason atomic.Pointer[string]
+	healthcheckTicker     sync.Once
+	healthcheckInterval   time.Duration
 }
 
 type appHandlerFunc func(*log.Entry, http.ResponseWriter, *http.Request)
@@ -182,27 +145,27 @@ func parseRemoteAddr(addr string) string {
 
 func (s *Server) getRoleMapping(ctx context.Context, IP string) (*mappings.RoleMappingResult, error) {
 	expBackoff := backoff.NewExponentialBackOff()
-	expBackoff.MaxInterval = s.BackoffMaxInterval
+	expBackoff.MaxInterval = s.backoffMaxInterval
 
 	return backoff.Retry(ctx, func() (*mappings.RoleMappingResult, error) {
 		return s.roleMapper.GetRoleMapping(ctx, IP)
-	}, backoff.WithBackOff(expBackoff), backoff.WithMaxElapsedTime(s.BackoffMaxElapsedTime))
+	}, backoff.WithBackOff(expBackoff), backoff.WithMaxElapsedTime(s.backoffMaxElapsedTime))
 }
 
 func (s *Server) getExternalIDMapping(ctx context.Context, IP string) (string, error) {
 	expBackoff := backoff.NewExponentialBackOff()
-	expBackoff.MaxInterval = s.BackoffMaxInterval
+	expBackoff.MaxInterval = s.backoffMaxInterval
 
 	return backoff.Retry(ctx, func() (string, error) {
 		return s.roleMapper.GetExternalIDMapping(ctx, IP)
-	}, backoff.WithBackOff(expBackoff), backoff.WithMaxElapsedTime(s.BackoffMaxElapsedTime))
+	}, backoff.WithBackOff(expBackoff), backoff.WithMaxElapsedTime(s.backoffMaxElapsedTime))
 }
 
 func (s *Server) beginPollHealthcheck(ctx context.Context, interval time.Duration) {
 	s.healthcheckTicker.Do(func() {
 		s.doHealthcheck(ctx)
 
-		go func(ctx context.Context, inteval time.Duration) {
+		go func() {
 			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
 
@@ -214,7 +177,7 @@ func (s *Server) beginPollHealthcheck(ctx context.Context, interval time.Duratio
 					s.doHealthcheck(ctx)
 				}
 			}
-		}(ctx, interval)
+		}()
 	})
 }
 
@@ -228,21 +191,21 @@ func (s *Server) doHealthcheck(ctx context.Context) {
 	// on whether it passed or failed.
 	defer func() {
 		var healthcheckResult float64 = 1
-		s.HealthcheckFailReason.Store(aws.String(errMsg)) // Is empty if no error
+		s.healthcheckFailReason.Store(aws.String(errMsg)) // Is empty if no error
 		if err != nil || len(errMsg) > 0 {
 			healthcheckResult = 0
 		}
 		metrics.HealthcheckStatus.Set(healthcheckResult)
 	}()
 
-	instanceId, err := s.iam.GetInstanceId(ctx)
+	instanceId, err := iam.GetInstanceId(ctx)
 	if err != nil {
 		errMsg = fmt.Sprintf("Error getting instance id %+v", err)
 		log.Errorf("%s", errMsg)
 		return
 	}
 
-	s.InstanceID.Store(aws.String(instanceId))
+	s.instanceID.Store(aws.String(instanceId))
 }
 
 // HealthResponse represents a response for the health check.
@@ -251,19 +214,23 @@ type HealthResponse struct {
 	InstanceID string `json:"instanceId"`
 }
 
-func (s *Server) healthHandler(logger *log.Entry, w http.ResponseWriter, r *http.Request) {
+func (s *Server) healthHandler(
+	log *log.Entry, //nolint: unused
+	w http.ResponseWriter,
+	r *http.Request, //nolint: unused
+) {
 	// healthHandler reports the last result of a timed healthcheck that repeats in the background.
 	// The healthcheck logic is performed in doHealthcheck and saved into Server struct fields.
 	// This "caching" of results allows the healthcheck to be monitored at a high request rate by external systems
 	// without fear of overwhelming any rate limits with AWS or other dependencies.
-	reason := aws.ToString(s.HealthcheckFailReason.Load())
+	reason := aws.ToString(s.healthcheckFailReason.Load())
 	if len(reason) > 0 {
 		http.Error(w, reason, http.StatusInternalServerError)
 		return
 	}
 
-	instanceId := aws.ToString(s.InstanceID.Load())
-	health := &HealthResponse{InstanceID: instanceId, HostIP: s.HostIP}
+	instanceId := aws.ToString(s.instanceID.Load())
+	health := &HealthResponse{InstanceID: instanceId, HostIP: s.hostIP}
 	w.Header().Add("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(health); err != nil {
 		log.Errorf("Error sending json %+v", err)
@@ -297,8 +264,9 @@ func (s *Server) securityCredentialsHandler(logger *log.Entry, w http.ResponseWr
 
 	// If a base ARN has been supplied and this is not cross-account then
 	// return a simple role-name, otherwise return the full ARN
-	if s.iam.BaseARN != "" && strings.HasPrefix(roleMapping.Role, s.iam.BaseARN) {
-		write(logger, w, strings.TrimPrefix(roleMapping.Role, s.iam.BaseARN))
+	baseRoleARN := s.iam.BaseRoleARN()
+	if baseRoleARN != "" && strings.HasPrefix(roleMapping.Role, baseRoleARN) {
+		write(logger, w, strings.TrimPrefix(roleMapping.Role, baseRoleARN))
 		return
 	}
 	write(logger, w, roleMapping.Role)
@@ -340,15 +308,15 @@ func (s *Server) roleHandler(logger *log.Entry, w http.ResponseWriter, r *http.R
 	// these are a clone of EKS Pod Identity Session Tags
 	// https://docs.aws.amazon.com/eks/latest/userguide/pod-id-abac.html#pod-id-abac-tags
 	var tags []types.Tag
-	if s.EnablePodIdentityTags {
+	if s.enablePodIdentityTags {
 		tags = []types.Tag{
 			{
 				Key:   aws.String("eks-cluster-arn"),
-				Value: aws.String(s.EksClusterARN),
+				Value: aws.String(s.eksClusterARN),
 			},
 			{
 				Key:   aws.String("eks-cluster-name"),
-				Value: aws.String(s.EksClusterName),
+				Value: aws.String(s.eksClusterName),
 			},
 			{
 				Key:   aws.String("kubernetes-namespace"),
@@ -369,13 +337,21 @@ func (s *Server) roleHandler(logger *log.Entry, w http.ResponseWriter, r *http.R
 		}
 	}
 
-	credentials, err := s.iam.AssumeRole(ctx, wantedRoleARN, roleMapping.SessionName, externalID, remoteIP, s.IAMRoleSessionTTL, tags)
+	credentials, err := s.iam.AssumeRole(ctx, &iam.AssumeRoleArgs{
+		RoleARN:         wantedRoleARN,
+		RoleSessionName: roleMapping.SessionName,
+		ExternalID:      externalID,
+		RemoteIP:        remoteIP,
+		SessionTTL:      s.iamRoleSessionTTL,
+		Tags:            tags,
+	})
 	if err != nil {
 		roleLogger.Errorf("Error assuming role %+v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	roleLogger.Debugf("retrieved credentials from sts endpoint: %s", s.iam.Endpoint)
+
+	roleLogger.Debugf("retrieved credentials from sts endpoint: %s", s.iam.Endpoint())
 
 	if err := json.NewEncoder(w).Encode(credentials); err != nil {
 		roleLogger.Errorf("Error sending json %+v", err)
@@ -391,9 +367,9 @@ func (s *Server) reverseProxyHandler(logger *log.Entry, w http.ResponseWriter, r
 		r.RemoteAddr = ""
 	}
 
-	proxy := httputil.NewSingleHostReverseProxy(&url.URL{Scheme: "http", Host: s.MetadataAddress})
+	proxy := httputil.NewSingleHostReverseProxy(&url.URL{Scheme: "http", Host: s.metadataAddress}) //nolint:exhaustruct
 	proxy.ServeHTTP(w, r)
-	logger.WithField("metadata.url", s.MetadataAddress).Debug("Proxy ec2 metadata request")
+	logger.WithField("metadata.url", s.metadataAddress).Debug("Proxy ec2 metadata request")
 }
 
 func write(logger *log.Entry, w http.ResponseWriter, s string) {
@@ -402,46 +378,37 @@ func write(logger *log.Entry, w http.ResponseWriter, s string) {
 	}
 }
 
-// Run runs the specified Server.
-func (s *Server) Run(ctx context.Context, host, token, nodeName string, insecure bool) error {
-	k, err := k8s.NewClient(host, token, nodeName, insecure, s.ResolveDupIPs)
-	if err != nil {
-		return err
+func (s *Server) Run(ctx context.Context) error {
+	if s == nil {
+		return errors.New("server Run(): nil receiver")
 	}
 
-	s.k8s = k
-	s.iam = iam.NewClient(s.BaseRoleARN, s.UseRegionalStsEndpoint)
+	log.Debugf("Starting pod and namespace sync jobs with %s resync period", s.cacheResyncPeriod.String())
 
-	log.Debugln("Caches have been synced.  Proceeding with server.")
-
-	s.roleMapper = mappings.NewRoleMapper(s.IAMRoleKey, s.IAMRoleSessionNameKey, s.IAMExternalID, s.DefaultIAMRole, s.NamespaceRestriction, s.NamespaceKey, s.iam, s.k8s, s.NamespaceRestrictionFormat)
-
-	log.Debugf("Starting pod and namespace sync jobs with %s resync period", s.CacheResyncPeriod.String())
-
-	podSynched := s.k8s.WatchForPods(kube2iam.NewPodHandler(s.IAMRoleKey), s.CacheResyncPeriod)
-	namespaceSynched := s.k8s.WatchForNamespaces(kube2iam.NewNamespaceHandler(s.NamespaceKey), s.CacheResyncPeriod)
+	podSynched := s.k8s.WatchForPods(kube2iam.NewPodHandler(s.iamRoleKey), s.cacheResyncPeriod)
+	namespaceSynched := s.k8s.WatchForNamespaces(kube2iam.NewNamespaceHandler(s.namespaceKey), s.cacheResyncPeriod)
 
 	synced := false
-	for i := 0; i < defaultCacheSyncAttempts && !synced; i++ {
+	for i := 0; i < s.cacheSyncAttempts && !synced; i++ {
 		synced = cache.WaitForCacheSync(nil, podSynched, namespaceSynched)
 	}
 
 	if !synced {
-		return fmt.Errorf("Attempted to wait for caches to be synced for %d however it is not done.  Giving up.", defaultCacheSyncAttempts)
-	} else {
-		log.Debugln("Caches have been synced.  Proceeding with server.")
+		return fmt.Errorf("attempted to wait for caches to be synced for %d however it is not done. Giving up", s.cacheSyncAttempts)
 	}
 
-	// Begin healthchecking
-	s.beginPollHealthcheck(ctx, healthcheckInterval)
+	log.Debugln("Caches have been synced. Proceeding with server.")
+
+	s.beginPollHealthcheck(ctx, s.healthcheckInterval)
 
 	r := mux.NewRouter()
 	securityHandler := newAppHandler("securityCredentialsHandler", s.securityCredentialsHandler)
 
-	if s.Debug {
+	if s.debug {
 		// This is a potential security risk if enabled in some clusters, hence the flag
 		r.Handle("/debug/store", newAppHandler("debugStoreHandler", s.debugStoreHandler))
 	}
+
 	r.Handle("/{version}/meta-data/iam/security-credentials", securityHandler)
 	r.Handle("/{version}/meta-data/iam/security-credentials/", securityHandler)
 	r.Handle(
@@ -449,45 +416,77 @@ func (s *Server) Run(ctx context.Context, host, token, nodeName string, insecure
 		newAppHandler("roleHandler", s.roleHandler))
 	r.Handle("/healthz", newAppHandler("healthHandler", s.healthHandler))
 
-	if s.MetricsPort == s.AppPort {
+	if s.metricsPort == s.appPort {
 		r.Handle("/metrics", metrics.GetHandler())
 	} else {
-		metrics.StartMetricsServer(s.MetricsPort)
+		metrics.StartMetricsServer(s.metricsPort)
 	}
 
 	// This has to be registered last so that it catches fall-throughs
 	r.Handle("/{path:.*}", newAppHandler("reverseProxyHandler", s.reverseProxyHandler))
 
-	log.Infof("Listening on port %s", s.AppPort)
+	log.Infof("Listening on port %s", s.appPort)
 
-	if err := http.ListenAndServe(":"+s.AppPort, r); err != nil && err != http.ErrServerClosed {
-		return fmt.Errorf("Error creating kube2iam http server: %+v", err)
+	if err := http.ListenAndServe(":"+s.appPort, r); err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("error creating kube2iam http server: %+v", err)
 	}
 
 	return nil
 }
 
-// NewServer will create a new Server with default values.
-func NewServer() *Server {
-	s := &Server{
-		AppPort:                    defaultAppPort,
-		MetricsPort:                defaultAppPort,
-		BackoffMaxElapsedTime:      defaultMaxElapsedTime,
-		IAMRoleKey:                 defaultIAMRoleKey,
-		IAMRoleSessionNameKey:      defaultIAMRoleSessionNameKey,
-		IAMExternalID:              defaultIAMExternalID,
-		BackoffMaxInterval:         defaultMaxInterval,
-		LogLevel:                   defaultLogLevel,
-		LogFormat:                  defaultLogFormat,
-		MetadataAddress:            defaultMetadataAddress,
-		NamespaceKey:               defaultNamespaceKey,
-		CacheResyncPeriod:          defaultCacheResyncPeriod,
-		ResolveDupIPs:              defaultResolveDupIPs,
-		NamespaceRestrictionFormat: defaultNamespaceRestrictionFormat,
-		IAMRoleSessionTTL:          defaultIAMRoleSessionTTL,
+type Args struct {
+	AppPort               string
+	MetricsPort           string
+	IAMRoleKey            string
+	IAMRoleSessionTTL     time.Duration
+	EnablePodIdentityTags bool
+	EksClusterName        string
+	EksClusterARN         string
+	MetadataAddress       string
+	HostIP                string
+	NamespaceKey          string
+	CacheResyncPeriod     time.Duration
+	CacheSyncAttempts     int
+	Debug                 bool
+	BackoffMaxElapsedTime time.Duration
+	BackoffMaxInterval    time.Duration
+	HealthcheckInterval   time.Duration
+	Iam                   iam.Client
+	K8s                   *k8s.Client
+	RoleMapper            *mappings.RoleMapper
+}
+
+func New(args *Args) (*Server, error) {
+	if args == nil {
+		args = &Args{} //nolint:exhaustruct
 	}
 
-	s.HealthcheckFailReason.Store(aws.String("Healthcheck not yet performed"))
+	s := Server{
+		appPort:               args.AppPort,
+		metricsPort:           args.MetricsPort,
+		iamRoleKey:            args.IAMRoleKey,
+		iamRoleSessionTTL:     args.IAMRoleSessionTTL,
+		enablePodIdentityTags: args.EnablePodIdentityTags,
+		eksClusterName:        args.EksClusterName,
+		eksClusterARN:         args.EksClusterARN,
+		metadataAddress:       args.MetadataAddress,
+		hostIP:                args.HostIP,
+		roleMapper:            args.RoleMapper,
+		k8s:                   args.K8s,
+		namespaceKey:          args.NamespaceKey,
+		cacheResyncPeriod:     args.CacheResyncPeriod,
+		cacheSyncAttempts:     args.CacheSyncAttempts,
+		debug:                 args.Debug,
+		iam:                   args.Iam,
+		backoffMaxElapsedTime: args.BackoffMaxElapsedTime,
+		backoffMaxInterval:    args.BackoffMaxInterval,
+		instanceID:            atomic.Pointer[string]{},
+		healthcheckFailReason: atomic.Pointer[string]{},
+		healthcheckTicker:     sync.Once{},
+		healthcheckInterval:   args.HealthcheckInterval,
+	}
 
-	return s
+	s.healthcheckFailReason.Store(aws.String("Healthcheck not yet performed"))
+
+	return &s, nil
 }

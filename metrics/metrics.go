@@ -23,7 +23,7 @@ const (
 var (
 	// IamRequestSec tracks timing of IAM requests.
 	IamRequestSec = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
+		prometheus.HistogramOpts{ //nolint:exhaustruct
 			Namespace: namespace,
 			Subsystem: "iam",
 			Name:      "request_duration_seconds",
@@ -42,7 +42,7 @@ var (
 	// IamCacheHitCount tracks total number of IAM cache hits. Cache misses can be
 	// calculated by looking at the total number of IAM requests for the same role_arn.
 	IamCacheHitCount = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
+		prometheus.CounterOpts{ //nolint:exhaustruct
 			Namespace: namespace,
 			Subsystem: "iam",
 			Name:      "cache_hits_total",
@@ -56,7 +56,7 @@ var (
 
 	// K8sAPIDupReqCount tracks total number of K8s Api requests performed when duplicated pods are identified in the cache.
 	K8sAPIDupReqCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
+		prometheus.CounterOpts{ //nolint:exhaustruct
 			Namespace: namespace,
 			Subsystem: "iam",
 			Name:      "k8s_dup_req_count",
@@ -66,7 +66,7 @@ var (
 
 	// K8sAPIDupReqSuccesCount tracks total number of times we successfully retrieve the pod from the K8s Api.
 	K8sAPIDupReqSuccesCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
+		prometheus.CounterOpts{ //nolint:exhaustruct
 			Namespace: namespace,
 			Subsystem: "iam",
 			Name:      "k8s_dup_req_success_count",
@@ -76,7 +76,7 @@ var (
 
 	// PodNotFoundInCache tracks total number of times we don't have the pod info in the cache.
 	PodNotFoundInCache = prometheus.NewCounter(
-		prometheus.CounterOpts{
+		prometheus.CounterOpts{ //nolint:exhaustruct
 			Namespace: namespace,
 			Subsystem: "iam",
 			Name:      "k8s_pod_not_in_pod_cache",
@@ -86,7 +86,7 @@ var (
 
 	// HTTPRequestSec tracks timing of served HTTP requests.
 	HTTPRequestSec = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
+		prometheus.HistogramOpts{ //nolint:exhaustruct
 			Namespace: namespace,
 			Subsystem: "http",
 			Name:      "request_duration_seconds",
@@ -106,7 +106,7 @@ var (
 
 	// HealthcheckStatus reports the current healthcheck status of kube2iam.
 	HealthcheckStatus = prometheus.NewGauge(
-		prometheus.GaugeOpts{
+		prometheus.GaugeOpts{ //nolint:exhaustruct
 			Namespace: namespace,
 			Subsystem: "healthcheck",
 			Name:      "status",
@@ -116,7 +116,7 @@ var (
 
 	// Info reports various static information about the running kube2iam binary.
 	Info = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
+		prometheus.GaugeOpts{ //nolint:exhaustruct
 			Namespace: namespace,
 			Name:      "info",
 			Help:      "Informational labels about the kube2iam process.",
