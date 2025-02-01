@@ -45,7 +45,6 @@ func run(ctx context.Context) error {
 		metricsPort                string
 		baseRoleARN                string
 		debug                      bool
-		defaultIAMRole             string
 		iamRoleKey                 string
 		iamRoleSessionNameKey      string
 		iamExternalIDKey           string
@@ -57,7 +56,6 @@ func run(ctx context.Context) error {
 		metadataAddress            string
 		addIPTablesRule            bool
 		autoDiscoverBaseArn        bool
-		autoDiscoverDefaultRole    bool
 		hostInterface              string
 		namespaceRestriction       bool
 		namespaceRestrictionFormat string
@@ -86,7 +84,6 @@ func run(ctx context.Context) error {
 	fs.StringVar(&metricsPort, "metrics-port", defaultAppPort, "Metrics server http port (default: same as kube2iam server port)")
 	fs.StringVar(&baseRoleARN, "base-role-arn", "", "Base role ARN")
 	fs.BoolVar(&debug, "debug", false, "Enable debug features")
-	fs.StringVar(&defaultIAMRole, "default-role", "", "Fallback role to use when annotation is not set")
 	fs.StringVar(&iamRoleKey, "iam-role-key", defaultIAMRoleKey, "Pod annotation key used to retrieve the IAM role")
 	fs.StringVar(&iamRoleSessionNameKey, "iam-role-session-name-key", defaultIAMRoleSessionNameKey, "Pod annotation key used to set IAM Role Session Name")
 	fs.StringVar(&iamExternalIDKey, "iam-external-id", defaultIAMExternalIDKey, "Pod annotation key used to retrieve the IAM ExternalId")
@@ -98,7 +95,6 @@ func run(ctx context.Context) error {
 	fs.StringVar(&metadataAddress, "metadata-addr", defaultMetadataAddress, "Address for the ec2 metadata")
 	fs.BoolVar(&addIPTablesRule, "iptables", false, "Add iptables rule (also requires --host-ip)")
 	fs.BoolVar(&autoDiscoverBaseArn, "auto-discover-base-arn", false, "Queries EC2 Metadata to determine the base ARN")
-	fs.BoolVar(&autoDiscoverDefaultRole, "auto-discover-default-role", false, "Queries EC2 Metadata to determine the default Iam Role and base ARN, cannot be used with --default-role, overwrites any previous setting for --base-role-arn")
 	fs.StringVar(&hostInterface, "host-interface", "docker0", "Host interface for proxying AWS metadata")
 	fs.BoolVar(&namespaceRestriction, "namespace-restrictions", false, "Enable namespace restrictions")
 	fs.StringVar(&namespaceRestrictionFormat, "namespace-restriction-format", defaultNamespaceRestrictionFormat, "Namespace Restriction Format (glob/regexp)")
@@ -164,28 +160,6 @@ func run(ctx context.Context) error {
 		baseRoleARN = arn
 	}
 
-	if autoDiscoverDefaultRole {
-		if defaultIAMRole != "" {
-			return errors.New("you cannot use --default-role and --auto-discover-default-role at the same time")
-		}
-
-		arn, err := iam.GetBaseArn(ctx)
-		if err != nil {
-			return err
-		}
-
-		baseRoleARN = arn
-
-		instanceIAMRole, err := iam.GetInstanceIAMRole(ctx)
-		if err != nil {
-			return err
-		}
-
-		defaultIAMRole = instanceIAMRole
-
-		log.Infof("Using instance IAMRole %s%s as default", baseRoleARN, defaultIAMRole)
-	}
-
 	if addIPTablesRule {
 		if err := iptables.AddRule(appPort, metadataAddress, hostInterface, hostIP); err != nil {
 			return fmt.Errorf("failed to add iptable rule: %w", err)
@@ -218,7 +192,6 @@ func run(ctx context.Context) error {
 		RoleKey:                    iamRoleKey,
 		RoleSessionNameKey:         iamRoleSessionNameKey,
 		ExternalIDKey:              iamExternalIDKey,
-		DefaultRoleARN:             defaultIAMRole,
 		NamespaceRestriction:       namespaceRestriction,
 		NamespaceKey:               namespaceKey,
 		IamInstance:                i,
