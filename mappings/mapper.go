@@ -16,7 +16,6 @@ import (
 
 // RoleMapper handles relevant logic around associating IPs with a given IAM role
 type RoleMapper struct {
-	defaultRoleARN             string
 	iamRoleKey                 string
 	iamRoleSessionNameKey      string
 	iamExternalIDKey           string
@@ -91,24 +90,18 @@ func (r *RoleMapper) GetExternalIDMapping(ctx context.Context, IP string) (strin
 // taking into consideration the appropriate fallback logic and defaulting
 // logic along with the namespace role restrictions
 func (r *RoleMapper) extractRoleARN(pod *v1.Pod) (string, error) {
-	rawRoleName, annotationPresent := pod.GetAnnotations()[r.iamRoleKey]
-
-	if !annotationPresent && r.defaultRoleARN == "" {
+	role, ok := pod.GetAnnotations()[r.iamRoleKey]
+	if !ok {
 		return "", fmt.Errorf("unable to find role for IP %s", pod.Status.PodIP)
 	}
 
-	if !annotationPresent {
-		log.Warnf("Using fallback role for IP %s", pod.Status.PodIP)
-		rawRoleName = r.defaultRoleARN
-	}
-
-	return r.iam.RoleARN(rawRoleName), nil
+	return r.iam.RoleARN(role), nil
 }
 
 // checkRoleForNamespace checks the 'database' for a role allowed in a namespace,
 // returns true if the role is found, otheriwse false
 func (r *RoleMapper) checkRoleForNamespace(roleArn string, namespace string) bool {
-	if !r.namespaceRestriction || roleArn == r.defaultRoleARN {
+	if !r.namespaceRestriction {
 		return true
 	}
 
@@ -178,7 +171,6 @@ type RoleMapperArgs struct {
 	RoleKey                    string
 	RoleSessionNameKey         string
 	ExternalIDKey              string
-	DefaultRoleARN             string
 	NamespaceRestriction       bool
 	NamespaceKey               string
 	IamInstance                iam.Client
@@ -192,7 +184,6 @@ func New(args *RoleMapperArgs) *RoleMapper {
 	}
 
 	return &RoleMapper{
-		defaultRoleARN:             args.DefaultRoleARN,
 		iamRoleKey:                 args.RoleKey,
 		iamRoleSessionNameKey:      args.RoleSessionNameKey,
 		iamExternalIDKey:           args.ExternalIDKey,
