@@ -68,7 +68,6 @@ func run(ctx context.Context) error {
 		backoffMaxElapsedTime      time.Duration
 		logFormat                  string
 		logLevel                   string
-		useRegionalStsEndpoint     bool
 		verbose                    bool
 		printVersion               bool
 		assumeRoleARN              string
@@ -107,7 +106,6 @@ func run(ctx context.Context) error {
 	fs.DurationVar(&backoffMaxElapsedTime, "backoff-max-elapsed-time", defaultMaxElapsedTime, "Max elapsed time for backoff when querying for role.")
 	fs.StringVar(&logFormat, "log-format", defaultLogFormat, "Log format (text/json)")
 	fs.StringVar(&logLevel, "log-level", defaultLogLevel, "Log level")
-	fs.BoolVar(&useRegionalStsEndpoint, "use-regional-sts-endpoint", false, "use the regional sts endpoint if AWS_REGION is set")
 	fs.BoolVar(&verbose, "verbose", false, "Verbose")
 	fs.BoolVar(&printVersion, "version", false, "Print the version and exits")
 	fs.StringVar(&assumeRoleARN, "assume-role-arn", "", "role to assume")
