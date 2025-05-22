@@ -5,7 +5,7 @@ ENV CGO_ENABLED=0
 COPY . ./
 RUN make setup && make build
 
-FROM alpine:3.21.2
+FROM alpine:3.21.3
 RUN apk --no-cache add \
     ca-certificates \
     iptables
