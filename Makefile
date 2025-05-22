@@ -23,7 +23,7 @@ DOCKER_BUILD_FLAGS :=
 
 setup:
 	go install golang.org/x/tools/cmd/goimports@latest
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $$(go env GOPATH)/bin v1.63.4
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $$(go env GOPATH)/bin v1.64.8
 	go install github.com/jstemmer/go-junit-report/v2@latest
 	go install github.com/mattn/goveralls@latest
 
