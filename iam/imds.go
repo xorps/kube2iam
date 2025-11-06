@@ -21,18 +21,18 @@ func getInstanceMetadata(ctx context.Context, path string) (string, error) {
 		Path: path,
 	})
 	if err != nil {
-		return "", fmt.Errorf("EC2 Metadata [%s] response error, got %v", err, path)
+		return "", fmt.Errorf("ec2 metadata [%s] response error, got %v", err, path)
 	}
 	defer metadataResult.Content.Close()
 
 	instanceId, err := io.ReadAll(metadataResult.Content)
 	if err != nil {
-		return "", fmt.Errorf("Expect to read content [%s] from bytes, got %v", err, path)
+		return "", fmt.Errorf("expect to read content [%s] from bytes, got %v", err, path)
 	}
 
 	id := string(instanceId)
 	if id == "" {
-		return "", fmt.Errorf("EC2 Metadata didn't returned [%s], got empty string", path)
+		return "", fmt.Errorf("ec2 metadata didn't returned [%s], got empty string", path)
 	}
 
 	return id, nil

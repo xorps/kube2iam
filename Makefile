@@ -14,7 +14,7 @@ CPU_ARCH ?= arm64
 IMAGE_NAME := $(DOCKER_REPO)/$(BINARY_NAME)-$(CPU_ARCH)
 MANIFEST_NAME := $(DOCKER_REPO)/$(BINARY_NAME)
 ARCH ?= darwin
-GOLANGCI_LINT_VERSION ?= v1.23.8
+GOLANGCI_LINT_VERSION ?= v1.25.4
 GOLANGCI_LINT_CONCURRENCY ?= 4
 GOLANGCI_LINT_DEADLINE ?= 180
 PLATFORMS ?= linux/arm/v7,linux/arm64/v8,linux/amd64
@@ -23,7 +23,7 @@ DOCKER_BUILD_FLAGS :=
 
 setup:
 	go install golang.org/x/tools/cmd/goimports@latest
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $$(go env GOPATH)/bin v1.64.8
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $$(go env GOPATH)/bin v2.6.1
 	go install github.com/jstemmer/go-junit-report/v2@latest
 	go install github.com/mattn/goveralls@latest
 
