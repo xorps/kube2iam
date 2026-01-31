@@ -14,7 +14,7 @@ CPU_ARCH ?= arm64
 IMAGE_NAME := $(DOCKER_REPO)/$(BINARY_NAME)-$(CPU_ARCH)
 MANIFEST_NAME := $(DOCKER_REPO)/$(BINARY_NAME)
 ARCH ?= darwin
-GOLANGCI_LINT_VERSION ?= v1.25.4
+GOLANGCI_LINT_VERSION ?= v1.25.6
 GOLANGCI_LINT_CONCURRENCY ?= 4
 GOLANGCI_LINT_DEADLINE ?= 180
 PLATFORMS ?= linux/arm/v7,linux/arm64/v8,linux/amd64
@@ -123,3 +123,11 @@ clean:
 .PHONY: lint
 lint:
 	golangci-lint run
+
+.PHONY: bump-deps
+bump-deps:
+	go get -u ./... \
+		k8s.io/api@v0.34.3 \
+		k8s.io/apimachinery@v0.34.3 \
+		k8s.io/client-go@v0.34.3
+	go mod tidy
